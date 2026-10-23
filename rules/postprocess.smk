@@ -209,6 +209,27 @@ rule make_summary:
         scripts("make_summary.py")
 
 
+rule evaluate_price_backcast:
+    """Evaluates modelled against observed hourly day-ahead prices per bus."""
+    input:
+        network=lambda w: RESULTS
+        + f"networks/solved_{config_provider('planning_horizons')(w)[-1]}.nc",
+        prices=resources("day_ahead_prices.csv"),
+    output:
+        metrics=RESULTS + "backcast/price_metrics.csv",
+        monthly_bias=RESULTS + "backcast/price_monthly_bias.csv",
+        plots=RESULTS + "backcast/price_evaluation.pdf",
+    log:
+        RESULTS + "logs/evaluate_price_backcast.log",
+    benchmark:
+        RESULTS + "benchmarks/evaluate_price_backcast"
+    threads: 1
+    resources:
+        mem_mb=4000,
+    script:
+        scripts("evaluate_price_backcast.py")
+
+
 rule plot_summary:
     """Plots stacked bar charts of system costs, energy and balances across planning horizons."""
     input:

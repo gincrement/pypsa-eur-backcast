@@ -469,7 +469,8 @@ the transmission capacities between bidding zones are retrieved from the
 ENTSO-E Transparency Platform for the borders listed in
 `data/entsoe_borders.csv`, except for the borders given in
 `fixed_border_capacities`. The file lists the bidding zone borders with lines
-or DC links in the bidding zone clustered network.
+or DC links in the bidding zone clustered network. The rule
+[evaluate_price_backcast][] compares the modelled with the observed prices.
 
 {{ schema_table("backcast") }}
 
