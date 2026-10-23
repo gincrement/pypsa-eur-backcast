@@ -540,6 +540,7 @@ load:
 # docs in https://pypsa-eur.readthedocs.io/en/latest/configuration/#backcast_cf
 backcast:
   exclude_price_areas: []
+  exclude_price_buses: []
   max_price_gap_hours: 3
   max_price_gap_hours_by_area: {}
   max_capacity_gap_hours: 48

@@ -58,17 +58,25 @@ def test_to_hourly_utc_across_dst(start, utc_start):
 def test_map_areas_to_buses_many_to_one(prices, area_to_bus):
     buses = pd.Index(["DE00", "LUG1", "IE00", "GBNI"])
 
-    result = map_areas_to_buses(prices, area_to_bus, buses, exclude=[])
+    result = map_areas_to_buses(
+        prices, area_to_bus, buses, exclude=[], exclude_buses=[]
+    )
 
     assert result.columns.equals(buses)
     np.testing.assert_array_equal(result["LUG1"], prices["DE_LU"])
     np.testing.assert_array_equal(result["GBNI"], prices["IE_SEM"])
 
 
-def test_map_areas_to_buses_exclude(prices, area_to_bus):
+@pytest.mark.parametrize(
+    "exclude, exclude_buses",
+    [(["GB"], []), ([], ["GB00"])],
+    ids=["area", "bus"],
+)
+def test_map_areas_to_buses_exclude(prices, area_to_bus, exclude, exclude_buses):
     buses = pd.Index(["DE00", "GB00"])
+    prices = prices.assign(GB=1.0)
 
-    result = map_areas_to_buses(prices, area_to_bus, buses, exclude=["GB"])
+    result = map_areas_to_buses(prices, area_to_bus, buses, exclude, exclude_buses)
 
     assert result.columns.tolist() == ["DE00"]
 
@@ -85,7 +93,9 @@ def test_map_areas_to_buses_exclude(prices, area_to_bus):
 def test_map_areas_to_buses_raises(area_to_bus, buses, columns, error):
     prices = pd.DataFrame(1.0, index=range(2), columns=columns)
     with pytest.raises(error):
-        map_areas_to_buses(prices, area_to_bus, pd.Index(buses), exclude=[])
+        map_areas_to_buses(
+            prices, area_to_bus, pd.Index(buses), exclude=[], exclude_buses=[]
+        )
 
 
 @pytest.mark.parametrize(

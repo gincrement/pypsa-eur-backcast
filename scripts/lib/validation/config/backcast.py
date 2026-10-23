@@ -26,6 +26,10 @@ class BackcastConfig(ConfigModel):
         default_factory=list,
         description="ENTSO-E bidding zone areas without published day-ahead prices for the whole snapshot range, e.g. `GB` after 2020, `BA` and `XK`, or `AL`, `ME` and `MK` whose markets started during 2023. Buses mapped to these areas in `data/entsoe_area_to_bus.csv` are omitted from the observed day-ahead prices.",
     )
+    exclude_price_buses: list[str] = Field(
+        default_factory=list,
+        description="Buses omitted from the observed day-ahead prices although their ENTSO-E area publishes prices, e.g. `FR15` (Corsica), which is not part of the French day-ahead market.",
+    )
     max_price_gap_hours: GapHours = Field(
         MAX_INTERPOLATE_PRICE_GAP_HOURS,
         description=f"Longest gap in hours of observed day-ahead prices that is tolerated. Gaps of up to {MAX_INTERPOLATE_PRICE_GAP_HOURS} hours are interpolated, longer gaps up to this limit are kept as missing values, even longer gaps raise an error.",

@@ -395,6 +395,13 @@
           },
           "type": "array"
         },
+        "exclude_price_buses": {
+          "description": "Buses omitted from the observed day-ahead prices although their ENTSO-E area publishes prices, e.g. `FR15` (Corsica), which is not part of the French day-ahead market.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "max_price_gap_hours": {
           "default": 3,
           "description": "Longest gap in hours of observed day-ahead prices that is tolerated. Gaps of up to 3 hours are interpolated, longer gaps up to this limit are kept as missing values, even longer gaps raise an error.",
@@ -12310,6 +12317,13 @@
       "properties": {
         "exclude_price_areas": {
           "description": "ENTSO-E bidding zone areas without published day-ahead prices for the whole snapshot range, e.g. `GB` after 2020, `BA` and `XK`, or `AL`, `ME` and `MK` whose markets started during 2023. Buses mapped to these areas in `data/entsoe_area_to_bus.csv` are omitted from the observed day-ahead prices.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "exclude_price_buses": {
+          "description": "Buses omitted from the observed day-ahead prices although their ENTSO-E area publishes prices, e.g. `FR15` (Corsica), which is not part of the French day-ahead market.",
           "items": {
             "type": "string"
           },

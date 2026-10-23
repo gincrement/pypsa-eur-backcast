@@ -517,6 +517,7 @@ rule build_day_ahead_prices:
         snapshots=config_provider("snapshots"),
         drop_leap_day=config_provider("enable", "drop_leap_day"),
         exclude_price_areas=config_provider("backcast", "exclude_price_areas"),
+        exclude_price_buses=config_provider("backcast", "exclude_price_buses"),
         max_price_gap_hours=config_provider("backcast", "max_price_gap_hours"),
         max_price_gap_hours_by_area=config_provider(
             "backcast", "max_price_gap_hours_by_area"

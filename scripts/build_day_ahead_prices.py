@@ -38,13 +38,15 @@ def map_areas_to_buses(
     area_to_bus: pd.Series,
     buses: pd.Index,
     exclude: list[str],
+    exclude_buses: list[str],
 ) -> pd.DataFrame:
-    """Assign bidding zone prices to buses, omitting buses of excluded areas."""
+    """Assign bidding zone prices to buses, omitting excluded areas and buses."""
     missing = buses.difference(area_to_bus.index)
     assert missing.empty, f"Buses without ENTSO-E area: {missing.tolist()}"
     unknown = prices.columns.difference(area_to_bus)
     assert unknown.empty, f"Unknown ENTSO-E areas: {unknown.tolist()}"
-    bus_areas = area_to_bus.loc[buses].loc[lambda s: ~s.isin(exclude)]
+    bus_areas = area_to_bus.loc[buses[~buses.isin(exclude_buses)]]
+    bus_areas = bus_areas[~bus_areas.isin(exclude)]
     return prices[bus_areas.to_numpy()].set_axis(bus_areas.index, axis=1)
 
 
@@ -77,7 +79,11 @@ if __name__ == "__main__":
         snakemake.params.max_price_gap_hours_by_area,
     )
     prices = map_areas_to_buses(
-        prices, area_to_bus, buses, snakemake.params.exclude_price_areas
+        prices,
+        area_to_bus,
+        buses,
+        snakemake.params.exclude_price_areas,
+        snakemake.params.exclude_price_buses,
     )
 
     prices.to_csv(snakemake.output.csv)

@@ -82,6 +82,7 @@ solving:
 
 backcast:
   exclude_price_areas: [AL, BA, GB, ME, MK, XK]
+  exclude_price_buses: [FR15]
   max_price_gap_hours_by_area:
     IE_SEM: 25
   fixed_border_capacities:
