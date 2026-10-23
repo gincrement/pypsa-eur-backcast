@@ -269,6 +269,14 @@ class DataConfig(BaseModel):
         default_factory=lambda: _DataSourceConfig(source="archive"),
         description="ENTSO-E electricity demand data source configuration.",
     )
+    entsoe_day_ahead_prices: _DataSourceConfig = Field(
+        default_factory=lambda: _DataSourceConfig(source="build"),
+        description="ENTSO-E day-ahead electricity prices data source configuration.",
+    )
+    entsoe_cross_border_capacities: _DataSourceConfig = Field(
+        default_factory=lambda: _DataSourceConfig(source="build"),
+        description="ENTSO-E day-ahead cross-border capacities data source configuration.",
+    )
     neso_electricity_demand: _DataSourceConfig = Field(
         default_factory=lambda: _DataSourceConfig(source="archive"),
         description="NESO electricity demand data source configuration.",

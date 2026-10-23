@@ -1,0 +1,282 @@
+# SPDX-FileCopyrightText: Contributors to PyPSA-Eur <https://github.com/pypsa/pypsa-eur>
+#
+# SPDX-License-Identifier: MIT
+"""Tests for build_cross_border_capacities.py and the cross-border link replacement in scripts/lib/cross_border.py."""
+
+import numpy as np
+import pandas as pd
+import pypsa
+import pytest
+
+from scripts.build_cross_border_capacities import (
+    area_capacities,
+    border_shares,
+    build_capacities,
+)
+from scripts.lib.cross_border import apply_cross_border_capacities, inter_zone_branches
+
+SNAPSHOTS = pd.date_range("2023-01-31 22:00", periods=4, freq="h")
+AREA_TO_BUS = pd.Series({"DE00": "DE_LU", "LUG1": "DE_LU", "FR00": "FR"})
+
+
+@pytest.fixture
+def network() -> pypsa.Network:
+    n = pypsa.Network()
+    n.set_snapshots(SNAPSHOTS)
+    n.add("Bus", AREA_TO_BUS.index, carrier="AC")
+    n.add(
+        "Line",
+        ["DE-FR", "LU-FR", "LU-FR-planned"],
+        bus0=["FR00", "LUG1", "LUG1"],
+        bus1=["DE00", "FR00", "FR00"],
+        s_nom=[3000.0, 1000.0, 0.0],
+        x=0.1,
+        length=[400.0, 200.0, 100.0],
+    )
+    n.add(
+        "Link",
+        "copper_DE00_LUG1_0",
+        bus0="DE00",
+        bus1="LUG1",
+        carrier="copper",
+        p_nom=np.inf,
+        p_min_pu=-1,
+        underwater_fraction=0.0,
+    )
+    return n
+
+
+def retrieved(area_from: str, area_to: str, **columns: list[float]) -> pd.DataFrame:
+    index = pd.MultiIndex.from_product(
+        [[area_from], [area_to], SNAPSHOTS],
+        names=["area_from", "area_to", "utc_timestamp"],
+    )
+    data = {c: columns.get(c, [np.nan] * 4) for c in ["offered_capacity", "ntc"]}
+    data["scheduled_exchange"] = columns.get("scheduled_exchange", [0.0] * 4)
+    return pd.DataFrame(data, index=index)
+
+
+def test_border_shares_orient_and_split(network):
+    pairs = border_shares(inter_zone_branches(network, AREA_TO_BUS)).set_index(
+        ["bus0", "bus1"]
+    )
+
+    assert pairs.index.tolist() == [("DE00", "FR00"), ("FR00", "LUG1")]
+    assert pairs[["area0", "area1"]].values.tolist() == [
+        ["DE_LU", "FR"],
+        ["FR", "DE_LU"],
+    ]
+    np.testing.assert_allclose(pairs.share, [0.75, 0.25])
+
+
+@pytest.mark.parametrize(
+    "columns, reverse, proxy, capacity, source",
+    [
+        (
+            dict(ntc=[10, 20, 30, 40], offered_capacity=[90, 90, 90, 90]),
+            [0, 0, 0, 0],
+            [],
+            [10, 20, 30, 40],
+            "ntc",
+        ),
+        (
+            dict(ntc=[10, np.nan, np.nan, 40], offered_capacity=[90, 90, 90, 90]),
+            [0, 0, 0, 0],
+            [],
+            [10, 20, 30, 40],
+            "ntc",
+        ),
+        (
+            dict(offered_capacity=[np.nan, 9, 9, np.nan]),
+            [0, 0, 0, 0],
+            [],
+            [9, 9, 9, 9],
+            "offered_capacity",
+        ),
+        (dict(), [0, 0, 0, 0], [], [6, 6, 7, 7], "scheduled_exchange"),
+        (dict(), [0, 8, 0, 0], [], [8, 8, 7, 7], "scheduled_exchange"),
+        (
+            dict(ntc=[90, 90, 90, 90]),
+            [0, 0, 0, 0],
+            ["ES-FR"],
+            [6, 6, 7, 7],
+            "scheduled_exchange",
+        ),
+        (dict(ntc=[1, 1, 1, 1]), [0, 0, 0, 0], [], [5, 6, 7, 2], "ntc"),
+    ],
+    ids=[
+        "ntc-first",
+        "interpolated",
+        "edge-gaps",
+        "monthly-max-exchange",
+        "monthly-max-exchange-both-directions",
+        "exchange-proxy-border",
+        "raised-to-exchange",
+    ],
+)
+def test_area_capacities_source_priority(columns, reverse, proxy, capacity, source):
+    data = pd.concat(
+        [
+            retrieved("FR", "ES", scheduled_exchange=[5, 6, 7, 2], **columns),
+            retrieved("ES", "FR", scheduled_exchange=reverse),
+        ]
+    )
+
+    capacities, info = area_capacities(
+        data, [("FR", "ES")], SNAPSHOTS, max_gap=2, exchange_proxy_borders=proxy
+    )
+
+    np.testing.assert_allclose(capacities["FR->ES"], capacity)
+    assert info.loc["FR->ES", "source"] == source
+
+
+def test_area_capacities_resample_quarter_hours():
+    index = pd.MultiIndex.from_product(
+        [["FR"], ["ES"], pd.date_range(SNAPSHOTS[0], periods=16, freq="15min")],
+        names=["area_from", "area_to", "utc_timestamp"],
+    )
+    data = pd.concat(
+        [
+            pd.DataFrame(
+                {"offered_capacity": np.repeat([1.0, 2, 3, 4], 4), "ntc": np.nan},
+                index=index,
+            ).assign(scheduled_exchange=0.0),
+            retrieved("ES", "FR"),
+        ]
+    )
+
+    capacities, info = area_capacities(
+        data, [("ES", "FR")], SNAPSHOTS, max_gap=0, exchange_proxy_borders=[]
+    )
+
+    np.testing.assert_allclose(capacities["FR->ES"], [1, 2, 3, 4])
+    assert info.loc["FR->ES", "source"] == "offered_capacity"
+
+
+def test_build_capacities_maps_directions_to_buses(network):
+    pairs = border_shares(inter_zone_branches(network, AREA_TO_BUS))
+    data = pd.concat(
+        [
+            retrieved("DE_LU", "FR", offered_capacity=[400, 400, 400, 400]),
+            retrieved("FR", "DE_LU", ntc=[800, np.nan, 800, 800]),
+        ]
+    )
+
+    capacities, sources = build_capacities(
+        data, pairs, SNAPSHOTS, {}, max_gap=1, exchange_proxy_borders=[]
+    )
+
+    expected = {
+        "DE00->FR00": 300,
+        "FR00->DE00": 600,
+        "FR00->LUG1": 200,
+        "LUG1->FR00": 100,
+    }
+    assert sorted(capacities.columns) == sorted(expected)
+    for column, value in expected.items():
+        np.testing.assert_allclose(capacities[column], value)
+    assert sources.loc["LUG1->FR00", "area_from"] == "DE_LU"
+    assert sources.loc["FR00->LUG1", "source"] == "ntc"
+    assert sources.loc["FR00->LUG1", "interpolated_hours"] == 1
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        retrieved("DE_LU", "FR", offered_capacity=[1, 1, 1, 1]),
+        pd.concat(
+            [
+                retrieved("DE_LU", "FR", offered_capacity=[1, 1, 1, 1]),
+                retrieved("FR", "DE_LU", scheduled_exchange=[np.nan] * 4),
+            ]
+        ),
+        pd.concat(
+            [
+                retrieved("DE_LU", "FR", offered_capacity=[1, 1, 1, 1]),
+                retrieved("FR", "DE_LU", ntc=[1, np.nan, np.nan, 1]),
+            ]
+        ),
+    ],
+    ids=["missing-direction", "missing-data", "long-gap"],
+)
+def test_build_capacities_raises(network, data):
+    pairs = border_shares(inter_zone_branches(network, AREA_TO_BUS))
+    with pytest.raises(AssertionError, match="FR->DE_LU"):
+        build_capacities(
+            data, pairs, SNAPSHOTS, {}, max_gap=1, exchange_proxy_borders=[]
+        )
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [(800.0, [600, 200]), ("physical", [3000, 1000]), (0.0, [0, 0])],
+    ids=["mw", "physical", "zero"],
+)
+def test_build_capacities_fixed_borders(network, value, expected):
+    pairs = border_shares(inter_zone_branches(network, AREA_TO_BUS))
+    empty = retrieved("ES", "FR").iloc[:0]
+
+    capacities, sources = build_capacities(
+        empty,
+        pairs,
+        SNAPSHOTS,
+        {"DE_LU-FR": value},
+        max_gap=1,
+        exchange_proxy_borders=[],
+    )
+
+    for bus in ["DE00", "LUG1"]:
+        forward, reverse = f"{bus}->FR00", f"FR00->{bus}"
+        np.testing.assert_allclose(capacities[forward], capacities[reverse])
+    np.testing.assert_allclose(capacities["DE00->FR00"], expected[0])
+    np.testing.assert_allclose(capacities["LUG1->FR00"], expected[1])
+    assert (sources.source == "fixed").all()
+
+
+@pytest.mark.parametrize(
+    "forward, reverse, p_nom",
+    [
+        ([100, 200, 300, 400], [50, 50, 50, 50], 400),
+        ([10, 10, 10, 10], [80, 40, 20, 0], 80),
+    ],
+    ids=["forward-max", "reverse-max"],
+)
+def test_apply_cross_border_capacities(network, forward, reverse, p_nom):
+    capacities = pd.DataFrame(
+        {
+            "DE00->FR00": forward,
+            "FR00->DE00": reverse,
+            "FR00->LUG1": [0.0] * 4,
+            "LUG1->FR00": [0.0] * 4,
+        },
+        index=SNAPSHOTS,
+        dtype=float,
+    )
+
+    apply_cross_border_capacities(network, capacities, AREA_TO_BUS)
+
+    assert network.lines.empty
+    assert set(network.links.index) == {
+        "copper_DE00_LUG1_0",
+        "DE00->FR00",
+        "FR00->LUG1",
+    }
+    link = network.links.loc["DE00->FR00"]
+    assert (link.bus0, link.bus1, link.carrier) == ("DE00", "FR00", "DC")
+    assert link.p_nom == p_nom
+    assert link.length == 400.0
+    np.testing.assert_allclose(
+        network.links_t.p_max_pu["DE00->FR00"], np.array(forward) / p_nom
+    )
+    np.testing.assert_allclose(
+        network.links_t.p_min_pu["DE00->FR00"], -np.array(reverse) / p_nom
+    )
+    np.testing.assert_allclose(network.links_t.p_max_pu["FR00->LUG1"], 0.0)
+
+
+def test_apply_cross_border_capacities_raises_on_missing_border(network):
+    capacities = pd.DataFrame(
+        1.0, index=SNAPSHOTS, columns=["DE00->FR00", "FR00->DE00"]
+    )
+    with pytest.raises(AssertionError, match="LUG1"):
+        apply_cross_border_capacities(network, capacities, AREA_TO_BUS)

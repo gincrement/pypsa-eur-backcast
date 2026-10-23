@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from scripts.lib.validation.config._base import ConfigModel
 from scripts.lib.validation.config.adjustments import AdjustmentsConfig
 from scripts.lib.validation.config.atlite import AtliteConfig
+from scripts.lib.validation.config.backcast import BackcastConfig
 from scripts.lib.validation.config.biomass import BiomassConfig
 from scripts.lib.validation.config.clustering import ClusteringConfig
 from scripts.lib.validation.config.co2_budget import Co2BudgetConfig
@@ -179,6 +180,10 @@ class ConfigSchema(BaseModel):
     load: LoadConfig = Field(
         default_factory=LoadConfig,
         description="Electrical load configuration.",
+    )
+    backcast: BackcastConfig = Field(
+        default_factory=BackcastConfig,
+        description="Backcast of historical day-ahead electricity prices.",
     )
     pypsa_eur: PypsaEurConfig = Field(
         default_factory=PypsaEurConfig,

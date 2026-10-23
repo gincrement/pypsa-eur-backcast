@@ -63,6 +63,16 @@ def get_compose_inputs(w):
         load=resources("electricity_demand.nc"),
         snapshot_weightings=resources("snapshot_weightings.csv"),
         network=resources("networks/clustered.nc"),
+        cross_border_capacities=(
+            resources("cross_border_capacities.csv")
+            if elec["cross_border_capacities"] == "ntc"
+            else []
+        ),
+        area_to_bus=(
+            "data/entsoe_area_to_bus.csv"
+            if elec["cross_border_capacities"] == "ntc"
+            else []
+        ),
         solar_rooftop_potentials=(
             resources("solar_rooftop_potentials.csv")
             if "solar" in cfg["electricity"]["renewable_carriers"]

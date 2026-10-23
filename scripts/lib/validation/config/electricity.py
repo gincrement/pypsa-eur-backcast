@@ -10,7 +10,7 @@ See docs in https://pypsa-eur.readthedocs.io/en/latest/configuration/#electricit
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from scripts.lib.validation.config._base import ConfigModel
 
@@ -250,4 +250,22 @@ class ElectricityConfig(BaseModel):
         description="Limit on transmission expansion. The first part can be `v` (for setting a limit on line volume) or `c` (for setting a limit on line cost). The second part can be `opt` or a float bigger than one (e.g. 1.25). If `opt` is chosen line expansion is optimised according to its capital cost (where the choice `v` only considers overhead costs for HVDC transmission lines, while `c` uses more accurate costs distinguishing between overhead and underwater sections and including inverter pairs). The setting `v1.25` will limit the total volume of line expansion to 25% of currently installed capacities weighted by individual line lengths. The setting `c1.25` will allow to build a transmission network that costs no more than 25 % more than the current system. Can be given per planning horizon, e.g. `{2030: v1.05, 2040: v1.1}`. With myopic foresight, the limit of each subsequent planning horizon is relative to the transmission capacities of the previous planning horizon. Per-horizon values are not supported for perfect foresight.",
     )
 
+    cross_border_capacities: Literal["physical", "ntc"] = Field(
+        "physical",
+        description="Representation of the transmission capacities between bidding zones. `physical` keeps the AC lines and DC links of the grid. `ntc` replaces all lines and links between buses of different ENTSO-E bidding zone areas (see `data/entsoe_area_to_bus.csv`) by one bidirectional link per border with hourly net transfer capacities retrieved from the ENTSO-E Transparency Platform. In flow-based market coupling regions without published net transfer capacities, the monthly maximum of the day-ahead scheduled commercial exchanges over both directions is used instead. Copperplate connections are kept. Requires a fixed transmission network, i.e. `transmission_limit: v1.0` or `c1.0`.",
+    )
+
     model_config = ConfigDict(populate_by_name=True)
+
+    @model_validator(mode="after")
+    def check_ntc_transmission_limit(self) -> "ElectricityConfig":
+        """Require a fixed transmission network for `cross_border_capacities: ntc`."""
+        if self.cross_border_capacities == "ntc":
+            limits = self.transmission_limit
+            values = limits.values() if isinstance(limits, dict) else [limits]
+            invalid = [v for v in values if v[1:] in ("", "opt") or float(v[1:]) != 1.0]
+            assert not invalid, (
+                "`electricity: cross_border_capacities: ntc` requires a fixed "
+                f"transmission network, i.e. `transmission_limit: v1.0` or `c1.0`, not {invalid}."
+            )
+        return self

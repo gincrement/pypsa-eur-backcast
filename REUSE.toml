@@ -36,6 +36,8 @@ path = [
     "data/ammonia_plants.csv",
     "data/ch_industrial_production_per_subsector.csv",
     "data/district_heat_share.csv",
+    "data/entsoe_area_to_bus.csv",
+    "data/entsoe_borders.csv",
     "data/entsoegridkit/*",
     "data/heat_load_profile_BDEW.csv",
     "data/hydro_capacities.csv",

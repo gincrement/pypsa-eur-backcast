@@ -459,6 +459,27 @@ Configuration for `load` settings.
 ```
 
 
+## `backcast` {#backcast_cf}
+
+Configuration for the backcast of historical day-ahead electricity prices.
+Observed prices are retrieved from the ENTSO-E Transparency Platform per
+bidding zone and mapped to the buses of the bidding zone clustered network with
+`data/entsoe_area_to_bus.csv`. With `electricity: cross_border_capacities: ntc`,
+the transmission capacities between bidding zones are retrieved from the
+ENTSO-E Transparency Platform for the borders listed in
+`data/entsoe_borders.csv`, except for the borders given in
+`fixed_border_capacities`. The file lists the bidding zone borders with lines
+or DC links in the bidding zone clustered network.
+
+{{ schema_table("backcast") }}
+
+**YAML Syntax**
+
+```yaml
+{{ yaml_section("backcast") }}
+```
+
+
 ## `pypsa_eur` {#pypsa_eur_cf}
 
 Only used for sector-coupling studies.

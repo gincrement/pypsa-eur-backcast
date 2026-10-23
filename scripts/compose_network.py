@@ -22,6 +22,7 @@ applied and the network is exported for solving.
 
 import logging
 
+import pandas as pd
 import pypsa
 
 from scripts._helpers import (
@@ -38,6 +39,8 @@ from scripts.add_electricity import (
     sanitize_locations,
 )
 from scripts.add_existing_baseyear import main as add_existing_capacities
+from scripts.lib.cross_border import apply_cross_border_capacities
+from scripts.lib.entsoe import read_area_to_bus
 from scripts.prepare_network import (
     apply_co2_budget_constraints,
     apply_temporal_aggregation,
@@ -93,6 +96,13 @@ if __name__ == "__main__":
     costs = load_costs(snakemake.input.tech_costs)
 
     add_electricity_components(n, inputs, params, costs)
+
+    if params.electricity["cross_border_capacities"] == "ntc":
+        apply_cross_border_capacities(
+            n,
+            pd.read_csv(inputs.cross_border_capacities, index_col=0, parse_dates=True),
+            read_area_to_bus(inputs.area_to_bus),
+        )
 
     if sector_mode:
         add_sector_components(n, inputs, params, costs, nyears, current_horizon)

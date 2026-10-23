@@ -244,3 +244,28 @@ class TestLineTypes:
             validate_config(
                 {"lines": {"types": {220.0: "Al/St 240/40 2-bundle 220.0"}}}
             )
+
+
+@pytest.mark.parametrize(
+    ("transmission_limit", "valid"),
+    [
+        ("v1.0", True),
+        ("c1", True),
+        ({2030: "v1.0", 2040: "c1.0"}, True),
+        ("vopt", False),
+        ("c1.25", False),
+        ({2030: "v1.0", 2040: "v1.1"}, False),
+    ],
+)
+def test_ntc_requires_fixed_transmission_limit(transmission_limit, valid):
+    config = {
+        "electricity": {
+            "cross_border_capacities": "ntc",
+            "transmission_limit": transmission_limit,
+        }
+    }
+    if valid:
+        validate_config(config)
+    else:
+        with pytest.raises(ValueError, match="fixed transmission network"):
+            validate_config(config)

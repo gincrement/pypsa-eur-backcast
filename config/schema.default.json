@@ -385,6 +385,61 @@
         }
       }
     },
+    "BackcastConfig": {
+      "description": "Configuration for `backcast` settings.",
+      "properties": {
+        "exclude_price_areas": {
+          "description": "ENTSO-E bidding zone areas without published day-ahead prices for the whole snapshot range, e.g. `GB` after 2020, `BA` and `XK`, or `AL`, `ME` and `MK` whose markets started during 2023. Buses mapped to these areas in `data/entsoe_area_to_bus.csv` are omitted from the observed day-ahead prices.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "max_price_gap_hours": {
+          "default": 3,
+          "description": "Longest gap in hours of observed day-ahead prices that is tolerated. Gaps of up to 3 hours are interpolated, longer gaps up to this limit are kept as missing values, even longer gaps raise an error.",
+          "minimum": 3,
+          "type": "integer"
+        },
+        "max_price_gap_hours_by_area": {
+          "additionalProperties": {
+            "minimum": 3,
+            "type": "integer"
+          },
+          "description": "Longest tolerated gap in hours of observed day-ahead prices per ENTSO-E area, overriding `max_price_gap_hours`, e.g. `IE_SEM: 25` as the ENTSO-E Transparency Platform publishes no prices for the 25 hour delivery day at the end of daylight saving time in 2022 and 2023.",
+          "type": "object"
+        },
+        "max_capacity_gap_hours": {
+          "default": 48,
+          "description": "Longest gap in hours of the ENTSO-E cross-border capacity source of a border direction that is interpolated, used with `electricity: cross_border_capacities: ntc`. Longer gaps raise an error. The default covers up to two missing delivery days, e.g. of the offered capacities on the Nordic and Baltic borders in 2023.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "fixed_border_capacities": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "const": "physical",
+                "type": "string"
+              }
+            ]
+          },
+          "description": "Constant capacity in MW per direction for bidding zone borders without published ENTSO-E capacities, used with `electricity: cross_border_capacities: ntc`. Keys are alphabetically sorted ENTSO-E area pairs like `DK_1-GB`; the value `physical` keeps the physical transmission capacity of the network and `0` disconnects the areas, e.g. for interconnectors commissioned after the snapshots or connections without a market border created by the clustering.",
+          "type": "object"
+        },
+        "exchange_proxy_borders": {
+          "description": "Bidding zone borders that use the monthly maximum of the day-ahead scheduled commercial exchanges over both directions as capacity even if ENTSO-E publishes capacities, used with `electricity: cross_border_capacities: ntc`. Given as alphabetically sorted ENTSO-E area pairs like `BE-NL`, e.g. for borders within the flow-based Core region whose published net transfer capacities are outdated. `fixed_border_capacities` take precedence.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      }
+    },
     "BiomassConfig": {
       "description": "Configuration for `biomass` settings.",
       "properties": {
@@ -823,6 +878,11 @@
           "description": "Monthly rolling mean window for fossil fuel prices smoothing.",
           "minimum": 1,
           "type": "integer"
+        },
+        "fuel_price_nominal": {
+          "default": false,
+          "description": "Convert fossil fuel prices to nominal EUR using yearly exchange rates instead of deflating them to EUR2020.",
+          "type": "boolean"
         },
         "nuclear": {
           "additionalProperties": {
@@ -1518,6 +1578,46 @@
           }
         },
         "entsoe_electricity_demand": {
+          "description": "Configuration for a single data source.",
+          "properties": {
+            "source": {
+              "default": "archive",
+              "description": "Source of the data. 'archive' retrieves pre-built data, 'primary' retrieves from primary source.",
+              "enum": [
+                "archive",
+                "primary",
+                "build"
+              ],
+              "type": "string"
+            },
+            "version": {
+              "default": "latest",
+              "description": "Version of the data to use. Uses the specific 'version' for the selected 'source' or the dataset tagged 'latest' for this source.",
+              "type": "string"
+            }
+          }
+        },
+        "entsoe_day_ahead_prices": {
+          "description": "Configuration for a single data source.",
+          "properties": {
+            "source": {
+              "default": "archive",
+              "description": "Source of the data. 'archive' retrieves pre-built data, 'primary' retrieves from primary source.",
+              "enum": [
+                "archive",
+                "primary",
+                "build"
+              ],
+              "type": "string"
+            },
+            "version": {
+              "default": "latest",
+              "description": "Version of the data to use. Uses the specific 'version' for the selected 'source' or the dataset tagged 'latest' for this source.",
+              "type": "string"
+            }
+          }
+        },
+        "entsoe_cross_border_capacities": {
           "description": "Configuration for a single data source.",
           "properties": {
             "source": {
@@ -2523,6 +2623,15 @@
           ],
           "default": "vopt",
           "description": "Limit on transmission expansion. The first part can be `v` (for setting a limit on line volume) or `c` (for setting a limit on line cost). The second part can be `opt` or a float bigger than one (e.g. 1.25). If `opt` is chosen line expansion is optimised according to its capital cost (where the choice `v` only considers overhead costs for HVDC transmission lines, while `c` uses more accurate costs distinguishing between overhead and underwater sections and including inverter pairs). The setting `v1.25` will limit the total volume of line expansion to 25% of currently installed capacities weighted by individual line lengths. The setting `c1.25` will allow to build a transmission network that costs no more than 25 % more than the current system. Can be given per planning horizon, e.g. `{2030: v1.05, 2040: v1.1}`. With myopic foresight, the limit of each subsequent planning horizon is relative to the transmission capacities of the previous planning horizon. Per-horizon values are not supported for perfect foresight."
+        },
+        "cross_border_capacities": {
+          "default": "physical",
+          "description": "Representation of the transmission capacities between bidding zones. `physical` keeps the AC lines and DC links of the grid. `ntc` replaces all lines and links between buses of different ENTSO-E bidding zone areas (see `data/entsoe_area_to_bus.csv`) by one bidirectional link per border with hourly net transfer capacities retrieved from the ENTSO-E Transparency Platform. In flow-based market coupling regions without published net transfer capacities, the monthly maximum of the day-ahead scheduled commercial exchanges over both directions is used instead. Copperplate connections are kept. Requires a fixed transmission network, i.e. `transmission_limit: v1.0` or `c1.0`.",
+          "enum": [
+            "physical",
+            "ntc"
+          ],
+          "type": "string"
         }
       }
     },
@@ -10535,6 +10644,15 @@
           ],
           "default": "vopt",
           "description": "Limit on transmission expansion. The first part can be `v` (for setting a limit on line volume) or `c` (for setting a limit on line cost). The second part can be `opt` or a float bigger than one (e.g. 1.25). If `opt` is chosen line expansion is optimised according to its capital cost (where the choice `v` only considers overhead costs for HVDC transmission lines, while `c` uses more accurate costs distinguishing between overhead and underwater sections and including inverter pairs). The setting `v1.25` will limit the total volume of line expansion to 25% of currently installed capacities weighted by individual line lengths. The setting `c1.25` will allow to build a transmission network that costs no more than 25 % more than the current system. Can be given per planning horizon, e.g. `{2030: v1.05, 2040: v1.1}`. With myopic foresight, the limit of each subsequent planning horizon is relative to the transmission capacities of the previous planning horizon. Per-horizon values are not supported for perfect foresight."
+        },
+        "cross_border_capacities": {
+          "default": "physical",
+          "description": "Representation of the transmission capacities between bidding zones. `physical` keeps the AC lines and DC links of the grid. `ntc` replaces all lines and links between buses of different ENTSO-E bidding zone areas (see `data/entsoe_area_to_bus.csv`) by one bidirectional link per border with hourly net transfer capacities retrieved from the ENTSO-E Transparency Platform. In flow-based market coupling regions without published net transfer capacities, the monthly maximum of the day-ahead scheduled commercial exchanges over both directions is used instead. Copperplate connections are kept. Requires a fixed transmission network, i.e. `transmission_limit: v1.0` or `c1.0`.",
+          "enum": [
+            "physical",
+            "ntc"
+          ],
+          "type": "string"
         }
       }
     },
@@ -11864,6 +11982,11 @@
           "minimum": 1,
           "type": "integer"
         },
+        "fuel_price_nominal": {
+          "default": false,
+          "description": "Convert fossil fuel prices to nominal EUR using yearly exchange rates instead of deflating them to EUR2020.",
+          "type": "boolean"
+        },
         "nuclear": {
           "additionalProperties": {
             "anyOf": [
@@ -12179,6 +12302,61 @@
               "type": "number"
             }
           }
+        }
+      }
+    },
+    "backcast": {
+      "description": "Configuration for `backcast` settings.",
+      "properties": {
+        "exclude_price_areas": {
+          "description": "ENTSO-E bidding zone areas without published day-ahead prices for the whole snapshot range, e.g. `GB` after 2020, `BA` and `XK`, or `AL`, `ME` and `MK` whose markets started during 2023. Buses mapped to these areas in `data/entsoe_area_to_bus.csv` are omitted from the observed day-ahead prices.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "max_price_gap_hours": {
+          "default": 3,
+          "description": "Longest gap in hours of observed day-ahead prices that is tolerated. Gaps of up to 3 hours are interpolated, longer gaps up to this limit are kept as missing values, even longer gaps raise an error.",
+          "minimum": 3,
+          "type": "integer"
+        },
+        "max_price_gap_hours_by_area": {
+          "additionalProperties": {
+            "minimum": 3,
+            "type": "integer"
+          },
+          "description": "Longest tolerated gap in hours of observed day-ahead prices per ENTSO-E area, overriding `max_price_gap_hours`, e.g. `IE_SEM: 25` as the ENTSO-E Transparency Platform publishes no prices for the 25 hour delivery day at the end of daylight saving time in 2022 and 2023.",
+          "type": "object"
+        },
+        "max_capacity_gap_hours": {
+          "default": 48,
+          "description": "Longest gap in hours of the ENTSO-E cross-border capacity source of a border direction that is interpolated, used with `electricity: cross_border_capacities: ntc`. Longer gaps raise an error. The default covers up to two missing delivery days, e.g. of the offered capacities on the Nordic and Baltic borders in 2023.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "fixed_border_capacities": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "const": "physical",
+                "type": "string"
+              }
+            ]
+          },
+          "description": "Constant capacity in MW per direction for bidding zone borders without published ENTSO-E capacities, used with `electricity: cross_border_capacities: ntc`. Keys are alphabetically sorted ENTSO-E area pairs like `DK_1-GB`; the value `physical` keeps the physical transmission capacity of the network and `0` disconnects the areas, e.g. for interconnectors commissioned after the snapshots or connections without a market border created by the clustering.",
+          "type": "object"
+        },
+        "exchange_proxy_borders": {
+          "description": "Bidding zone borders that use the monthly maximum of the day-ahead scheduled commercial exchanges over both directions as capacity even if ENTSO-E publishes capacities, used with `electricity: cross_border_capacities: ntc`. Given as alphabetically sorted ENTSO-E area pairs like `BE-NL`, e.g. for borders within the flow-based Core region whose published net transfer capacities are outdated. `fixed_border_capacities` take precedence.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       }
     },
@@ -15153,6 +15331,46 @@
           }
         },
         "entsoe_electricity_demand": {
+          "description": "Configuration for a single data source.",
+          "properties": {
+            "source": {
+              "default": "archive",
+              "description": "Source of the data. 'archive' retrieves pre-built data, 'primary' retrieves from primary source.",
+              "enum": [
+                "archive",
+                "primary",
+                "build"
+              ],
+              "type": "string"
+            },
+            "version": {
+              "default": "latest",
+              "description": "Version of the data to use. Uses the specific 'version' for the selected 'source' or the dataset tagged 'latest' for this source.",
+              "type": "string"
+            }
+          }
+        },
+        "entsoe_day_ahead_prices": {
+          "description": "Configuration for a single data source.",
+          "properties": {
+            "source": {
+              "default": "archive",
+              "description": "Source of the data. 'archive' retrieves pre-built data, 'primary' retrieves from primary source.",
+              "enum": [
+                "archive",
+                "primary",
+                "build"
+              ],
+              "type": "string"
+            },
+            "version": {
+              "default": "latest",
+              "description": "Version of the data to use. Uses the specific 'version' for the selected 'source' or the dataset tagged 'latest' for this source.",
+              "type": "string"
+            }
+          }
+        },
+        "entsoe_cross_border_capacities": {
           "description": "Configuration for a single data source.",
           "properties": {
             "source": {

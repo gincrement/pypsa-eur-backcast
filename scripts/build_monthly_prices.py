@@ -10,9 +10,10 @@ them from different input sources and translates them to pypsa syntax.
 """
 
 import logging
+from functools import partial
 
 import pandas as pd
-from pydeflate import imf_gdp_deflate, set_pydeflate_path
+from pydeflate import imf_exchange, imf_gdp_deflate, set_pydeflate_path
 
 from scripts._helpers import configure_logging, set_scenario_config
 
@@ -51,17 +52,20 @@ if __name__ == "__main__":
     }
     df = df.rename(columns=COLUMNS)[list(COLUMNS.values())]
 
-    # Convert from nominal to real prices (deflate to base year 2020)
-    df["year"] = df.index.year
-    df["iso_code"] = "DEU"
-    for col in COLUMNS.values():
-        df[col] = imf_gdp_deflate(
-            df,
-            value_column=col,
+    convert = (
+        partial(imf_exchange, source_currency="USD", target_currency="EUR")
+        if snakemake.params.nominal
+        else partial(
+            imf_gdp_deflate,
             source_currency="USD",
             target_currency="EUR",
             base_year=2020,
-        )["value"].values
+        )
+    )
+    df["year"] = df.index.year
+    df["iso_code"] = "DEU"
+    for col in COLUMNS.values():
+        df[col] = convert(df, value_column=col)["value"].values
     df = df[df.index.year >= 1999]  # only available from 1999 onwards
     df = df.drop(columns=["year", "iso_code"])
 

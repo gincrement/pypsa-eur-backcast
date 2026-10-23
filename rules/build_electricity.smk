@@ -453,8 +453,102 @@ rule build_fossil_fuel_prices:
         mem_mb=5000,
     params:
         rolling_window=config_provider("conventional", "fuel_price_rolling_window"),
+        nominal=config_provider("conventional", "fuel_price_nominal"),
     script:
         scripts("build_monthly_prices.py")
+
+
+def modelled_entsoe_areas(w) -> set[str]:
+    area_to_bus = read_area_to_bus("data/entsoe_area_to_bus.csv")
+    countries = config_provider("countries")(w)
+    return set(area_to_bus[area_to_bus.index.str[:2].isin(countries)])
+
+
+def snapshot_years(w) -> list[int]:
+    return list(get_snapshots(config_provider("snapshots")(w)).year.unique())
+
+
+def input_day_ahead_prices(w) -> list[str]:
+    exclude = config_provider("backcast", "exclude_price_areas")(w)
+    areas = modelled_entsoe_areas(w) - set(exclude)
+    return expand(
+        f"{ENTSOE_PRICES_DATA['folder']}/day_ahead_prices_{{area}}_{{year}}.csv",
+        area=sorted(areas),
+        year=snapshot_years(w),
+    )
+
+
+def input_cross_border_capacities(w) -> list[str]:
+    areas = modelled_entsoe_areas(w)
+    fixed = config_provider("backcast", "fixed_border_capacities")(w)
+    borders = pd.read_csv("data/entsoe_borders.csv")
+    borders = borders[
+        borders.area0.isin(areas)
+        & borders.area1.isin(areas)
+        & ~(borders.area0 + "-" + borders.area1).isin(fixed)
+    ]
+    directions = [
+        *zip(borders.area0, borders.area1),
+        *zip(borders.area1, borders.area0),
+    ]
+    return [
+        f"{ENTSOE_CAPACITIES_DATA['folder']}/cross_border_capacities_{year}_{a}-{b}.csv"
+        for year in snapshot_years(w)
+        for a, b in sorted(directions)
+    ]
+
+
+rule build_day_ahead_prices:
+    """Builds hourly observed day-ahead prices per bus of the bidding zone clustered network."""
+    input:
+        prices=input_day_ahead_prices,
+        area_to_bus="data/entsoe_area_to_bus.csv",
+        network=resources("networks/clustered.nc"),
+    output:
+        csv=resources("day_ahead_prices.csv"),
+    log:
+        logs("build_day_ahead_prices.log"),
+    benchmark:
+        benchmarks("build_day_ahead_prices")
+    threads: 1
+    resources:
+        mem_mb=2000,
+    params:
+        snapshots=config_provider("snapshots"),
+        drop_leap_day=config_provider("enable", "drop_leap_day"),
+        exclude_price_areas=config_provider("backcast", "exclude_price_areas"),
+        max_price_gap_hours=config_provider("backcast", "max_price_gap_hours"),
+        max_price_gap_hours_by_area=config_provider(
+            "backcast", "max_price_gap_hours_by_area"
+        ),
+    script:
+        scripts("build_day_ahead_prices.py")
+
+
+rule build_cross_border_capacities:
+    """Builds hourly cross-border capacities between the buses of the bidding zone clustered network."""
+    input:
+        capacities=input_cross_border_capacities,
+        area_to_bus="data/entsoe_area_to_bus.csv",
+        network=resources("networks/clustered.nc"),
+    output:
+        capacities=resources("cross_border_capacities.csv"),
+        sources=resources("cross_border_capacities_sources.csv"),
+    log:
+        logs("build_cross_border_capacities.log"),
+    benchmark:
+        benchmarks("build_cross_border_capacities")
+    threads: 1
+    resources:
+        mem_mb=2000,
+    params:
+        snapshots=config_provider("snapshots"),
+        drop_leap_day=config_provider("enable", "drop_leap_day"),
+        fixed_border_capacities=config_provider("backcast", "fixed_border_capacities"),
+        max_capacity_gap_hours=config_provider("backcast", "max_capacity_gap_hours"),
+        exchange_proxy_borders=config_provider("backcast", "exchange_proxy_borders"),
+    script:
+        scripts("build_cross_border_capacities.py")
 
 
 if COUNTRY_RUNOFF_DATASET["source"] == "build":

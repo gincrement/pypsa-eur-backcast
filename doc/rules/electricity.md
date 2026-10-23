@@ -16,6 +16,14 @@ and hydro power. Their outputs are attached to the clustered network by
 
 {{ rules("build_powerplants") }}
 
+## Observed day-ahead prices
+
+{{ rules("build_day_ahead_prices") }}
+
+## Cross-border capacities
+
+{{ rules("build_cross_border_capacities") }}
+
 ## Renewable potentials and profiles
 
 {{ rules("build_ship_raster", "build_natura_raster", "determine_availability_matrix", "determine_availability_matrix_MD_UA", "build_renewable_profiles", "build_solar_rooftop_potentials", "build_country_runoff", "build_hydro_profile") }}

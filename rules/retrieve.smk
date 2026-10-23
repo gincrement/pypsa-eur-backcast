@@ -592,6 +592,48 @@ if (ENTSOE_DEMAND_DATA := dataset_version("entsoe_electricity_demand"))["source"
             copy2(input["csv"], output["csv"])
 
 
+if (ENTSOE_PRICES_DATA := dataset_version("entsoe_day_ahead_prices"))["source"] in [
+    "build"
+]:
+
+    rule retrieve_day_ahead_prices_entsoe:
+        """Downloads day-ahead prices for one bidding zone and year from the ENTSO-E Transparency Platform."""
+        output:
+            csv=f"{ENTSOE_PRICES_DATA['folder']}"
+            + "/day_ahead_prices_{area}_{year}.csv",
+        log:
+            "logs/retrieve_day_ahead_prices_entsoe_{area}_{year}.log",
+        wildcard_constraints:
+            year=r"\d{4}",
+        retries: 2
+        resources:
+            mem_mb=2000,
+        script:
+            scripts("retrieve_day_ahead_prices_entsoe.py")
+
+
+if (ENTSOE_CAPACITIES_DATA := dataset_version("entsoe_cross_border_capacities"))[
+    "source"
+] in ["build"]:
+
+    rule retrieve_cross_border_capacities_entsoe:
+        """Downloads day-ahead cross-border capacities for one border, direction and year from ENTSO-E."""
+        output:
+            csv=f"{ENTSOE_CAPACITIES_DATA['folder']}"
+            + "/cross_border_capacities_{year}_{area_from}-{area_to}.csv",
+        log:
+            "logs/retrieve_cross_border_capacities_entsoe_{year}_{area_from}-{area_to}.log",
+        wildcard_constraints:
+            year=r"\d{4}",
+            area_from=r"[A-Z0-9_]+",
+            area_to=r"[A-Z0-9_]+",
+        retries: 5
+        resources:
+            mem_mb=2000,
+        script:
+            scripts("retrieve_cross_border_capacities_entsoe.py")
+
+
 if (NESO_DEMAND_DATA := dataset_version("neso_electricity_demand"))["source"] in [
     "build"
 ]:

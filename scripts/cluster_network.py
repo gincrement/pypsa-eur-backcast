@@ -211,7 +211,7 @@ def copperplate_buses(n: pypsa.Network, copperplate_regions: list[list[str]]):
                     p_nom=float("inf"),
                     p_min_pu=-1,
                     underwater_fraction=0.0,
-                    under_construction=0.0,
+                    under_construction=False,
                 )
 
 

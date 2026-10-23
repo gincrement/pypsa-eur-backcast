@@ -79,6 +79,10 @@ class ConventionalConfig(ConfigModel):
         description="Monthly rolling mean window for fossil fuel prices smoothing.",
         ge=1,
     )
+    fuel_price_nominal: bool = Field(
+        False,
+        description="Convert fossil fuel prices to nominal EUR using yearly exchange rates instead of deflating them to EUR2020.",
+    )
     nuclear: dict[str, str | float] = Field(
         default_factory=lambda: {"p_max_pu": "data/nuclear_p_max_pu.csv"},
         description="For any carrier/technology overwrite attributes as listed below.",

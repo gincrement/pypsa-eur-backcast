@@ -180,6 +180,7 @@ electricity:
     enable: false
     by_country: false
   transmission_limit: vopt
+  cross_border_capacities: physical
 
 # docs in https://pypsa-eur.readthedocs.io/en/latest/configuration/#atlite_cf
 atlite:
@@ -457,6 +458,7 @@ conventional:
   unit_commitment: false
   dynamic_fuel_price: false
   fuel_price_rolling_window: 6
+  fuel_price_nominal: false
   nuclear:
     p_max_pu: data/nuclear_p_max_pu.csv
 
@@ -534,6 +536,15 @@ load:
   distribution_key:
     gdp: 0.6
     population: 0.4
+
+# docs in https://pypsa-eur.readthedocs.io/en/latest/configuration/#backcast_cf
+backcast:
+  exclude_price_areas: []
+  max_price_gap_hours: 3
+  max_price_gap_hours_by_area: {}
+  max_capacity_gap_hours: 48
+  fixed_border_capacities: {}
+  exchange_proxy_borders: []
 
 # docs in https://pypsa-eur.readthedocs.io/en/latest/configuration/#pypsa_eur_cf
 pypsa_eur:
@@ -1485,6 +1496,12 @@ data:
     version: latest
   entsoe_electricity_demand:
     source: archive
+    version: latest
+  entsoe_day_ahead_prices:
+    source: build
+    version: latest
+  entsoe_cross_border_capacities:
+    source: build
     version: latest
   neso_electricity_demand:
     source: archive
