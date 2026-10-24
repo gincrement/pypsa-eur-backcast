@@ -5,6 +5,7 @@
 Page context and Plotly helpers shared by the dashboard pages.
 """
 
+import calendar
 from dataclasses import dataclass
 
 import numpy as np
@@ -18,13 +19,17 @@ from scripts.lib.backcast_plotting import (
     MODEL_COLOR,
     OBSERVED_COLOR,
     SECOND_COLOR,
+    SEQUENTIAL,
     ZONE_GROUPS,
     ZONE_ORDER,
     symmetric_limit,
 )
 
-HEATMAP_HEIGHT = 18
-MARKER_COLORS = {"negative price": "#CC79A7", "load shedding": "#D55E00"}
+ROW_HEIGHT = 16
+CHART_HEIGHT = 420
+WORSE_COLOR = "#D55E00"
+MONTHS = list(calendar.month_abbr)[1:]
+MARKER_COLORS = {"negative price": "#CC79A7", "load shedding": WORSE_COLOR}
 
 
 @dataclass(frozen=True)
@@ -35,8 +40,10 @@ class Context:
     compare: Comparison | None
     area: str
     hours: pd.DatetimeIndex
+    period: str
     aggregation: str
     colors: dict[str, str]
+    references: list[RunData]
 
     @property
     def bus(self) -> str:
@@ -60,12 +67,37 @@ class Context:
         """Area metrics of the comparison in the period, or over its own year if it covers another year."""
         assert self.compare is not None
         if not self.same_year:
-            run = self.compare.run
-            return area_metrics(run.area_model, run.area_observed)
+            return full_year(self.compare.run)
         model = self.compare.area_model(self.run.buses)
         return area_metrics(
             model.loc[self.hours], self.run.area_observed.loc[self.hours]
         )
+
+
+def full_year(run: RunData) -> pd.DataFrame:
+    """Area metrics of a run over its whole year."""
+    return area_metrics(run.area_model, run.area_observed)
+
+
+def takeaway(text: str) -> None:
+    """Show the key finding of a page in a bordered box."""
+    st.container(border=True).markdown(text)
+
+
+def worst(values: pd.Series, n: int = 3, signed: bool = False) -> str:
+    """List the areas with the largest absolute values and their values."""
+    top = values.abs().nlargest(n).index if signed else values.nlargest(n).index
+    template = "{:+.1f}" if signed else "{:.1f}"
+    return ", ".join(f"{a} ({template.format(values[a])})" for a in top)
+
+
+def zone_layout(fig: go.Figure, areas: list[str]) -> go.Figure:
+    """Order a horizontal per-area figure by zone with group separators and row-based height."""
+    for y in group_breaks(areas):
+        fig.add_hline(y=y, line_width=0.6, line_color="grey")
+    fig.update_yaxes(autorange="reversed", type="category")
+    fig.update_layout(height=ROW_HEIGHT * len(areas) + 110, margin=dict(t=50, b=30))
+    return fig
 
 
 def selected_points(event: dict | None) -> list[dict]:
@@ -82,7 +114,7 @@ def group_breaks(areas: list[str]) -> list[float]:
 
 def heatmap(
     data: pd.DataFrame,
-    title: str,
+    unit: str,
     diverging: bool = True,
     text: bool = False,
 ) -> go.Figure:
@@ -92,7 +124,7 @@ def heatmap(
     scale = (
         dict(colorscale=DIVERGING, zmid=0, zmin=-limit, zmax=limit)
         if diverging
-        else dict(colorscale="Viridis")
+        else dict(colorscale=SEQUENTIAL.capitalize())
     )
     fig = go.Figure(
         go.Heatmap(
@@ -102,7 +134,7 @@ def heatmap(
             text=data.round(0).to_numpy() if text else None,
             texttemplate="%{text}" if text else None,
             hovertemplate="%{y} %{x}: %{z:.1f}<extra></extra>",
-            colorbar=dict(title=title),
+            colorbar=dict(title=unit, thickness=12),
             **scale,
         )
     )
@@ -122,10 +154,9 @@ def heatmap(
     fig.update_yaxes(autorange="reversed", type="category")
     fig.update_xaxes(type="category")
     fig.update_layout(
-        title=title,
-        height=HEATMAP_HEIGHT * len(rows) + 120,
+        height=ROW_HEIGHT * len(rows) + 80,
         clickmode="event+select",
-        margin=dict(t=40, b=30),
+        margin=dict(t=10, b=30),
     )
     return fig
 

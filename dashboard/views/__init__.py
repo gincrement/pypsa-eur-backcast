@@ -1,12 +1,13 @@
 # SPDX-FileCopyrightText: Contributors to PyPSA-Eur <https://github.com/pypsa/pypsa-eur>
 #
 # SPDX-License-Identifier: MIT
-"""Pages of the backcast dashboard."""
+"""Pages of the backcast dashboard in story order with the question each answers."""
 
-PAGES = [
-    "Scorecard",
-    "Zone explorer",
-    "Error structure",
-    "Dispatch and exchange",
-    "Compare",
-]
+QUESTIONS = {
+    "Overview": "How good is the backcast, and in which bidding zones does it fail?",
+    "Error patterns": "When does it fail: in which months, hours and price levels?",
+    "Zone detail": "How do modelled and observed prices compare in {area}?",
+    "Dispatch and flows": "Why: what sets the price in {area} and how does it trade?",
+    "Compare runs": "What changed between {run} and {compare}?",
+}
+PAGES = list(QUESTIONS)

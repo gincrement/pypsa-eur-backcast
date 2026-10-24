@@ -14,14 +14,15 @@ import yaml
 
 from dashboard import data
 from dashboard.state import DEFAULTS, init_state, sync_query_params
-from dashboard.views import PAGES, compare, dispatch, errors, scorecard, zone
+from dashboard.views import PAGES, QUESTIONS, compare, dispatch, errors, overview, zone
 from dashboard.views.common import Context
 from scripts.lib.backcast_plotting import STACK, group_colors
 
+AUTO_DAILY_HOURS = 24 * 62
 RENDER: dict[str, Callable[[Context], None]] = dict(
     zip(
         PAGES,
-        [scorecard.render, zone.render, errors.render, dispatch.render, compare.render],
+        [overview.render, errors.render, zone.render, dispatch.render, compare.render],
     )
 )
 
@@ -67,12 +68,31 @@ def period_dates(run: data.RunData) -> tuple[date, date]:
     return date.fromisoformat(start), date.fromisoformat(end)
 
 
+def period_label(period: str, hours: pd.DatetimeIndex) -> str:
+    """Readable name of the selected period."""
+    if period == "month":
+        return hours[0].strftime("%B %Y")
+    if period == "year":
+        return f"the year {hours[0].year}"
+    return f"{period} {hours[0]:%d %b} to {hours[-1]:%d %b %Y}"
+
+
+def resolve_aggregation(choice: str, hours: pd.DatetimeIndex) -> str:
+    """Daily means for periods longer than two months under auto, else the choice."""
+    if choice != "auto":
+        return choice
+    return "daily" if len(hours) > AUTO_DAILY_HOURS else "hourly"
+
+
 def sidebar(runs: list[str]) -> Context:
     """Draw the global sidebar and return the page context."""
     bar = st.sidebar
+    if st.session_state.page not in PAGES:
+        st.session_state.page = PAGES[0]
     bar.radio("Page", PAGES, key="page")
     if st.session_state.run_a not in runs:
         st.session_state.run_a = runs[-1]
+    bar.divider()
     bar.selectbox("Run A", runs, key="run_a")
     run = cached_run(st.session_state.run_a)
     choices = [
@@ -90,8 +110,9 @@ def sidebar(runs: list[str]) -> Context:
         st.session_state.area = (
             DEFAULTS["area"] if DEFAULTS["area"] in areas else areas[0]
         )
-    bar.selectbox("Area", areas, key="area")
-    bar.radio("Period", data.PRESETS, key="period", horizontal=True)
+    bar.selectbox("Bidding zone", areas, key="area")
+    bar.divider()
+    bar.selectbox("Period", data.PRESETS, key="period")
     dates = None
     if st.session_state.period == "month":
         bar.slider("Month", 1, 12, key="month")
@@ -100,10 +121,17 @@ def sidebar(runs: list[str]) -> Context:
         if len(picked) == 2:
             st.session_state.start, st.session_state.end = map(str, picked)
         dates = tuple(pd.Timestamp(d) for d in period_dates(run))
-    bar.radio("Aggregation", list(data.AGGREGATIONS), key="agg", horizontal=True)
+    if st.session_state.agg not in ["auto", *data.AGGREGATIONS]:
+        st.session_state.agg = "auto"
+    bar.segmented_control(
+        "Time series resolution", ["auto", *data.AGGREGATIONS], key="agg"
+    )
     stale = data.stale_sources(run.manifest)
     if stale:
-        bar.warning(f"Extract older than {len(stale)} sources, rerun backcast-extract")
+        bar.warning(
+            f"Extract is older than {len(stale)} of its sources, rerun backcast-extract"
+        )
+    bar.caption(f"Extract {run.manifest['created']} at commit {run.manifest['commit']}")
     hours = data.period_index(
         run.observed.index,
         st.session_state.period,
@@ -116,8 +144,10 @@ def sidebar(runs: list[str]) -> Context:
         compare=comparison(st.session_state.run_b, run, runs),
         area=st.session_state.area,
         hours=hours,
-        aggregation=st.session_state.agg,
+        period=period_label(st.session_state.period, hours),
+        aggregation=resolve_aggregation(st.session_state.agg or "auto", hours),
         colors=carrier_colors(),
+        references=[cached_run(r) for r in runs if cached_run(r).year != run.year],
     )
 
 
@@ -130,6 +160,13 @@ if not runs:
     )
     st.stop()
 context = sidebar(runs)
-st.title(f"{st.session_state.page}: {context.run.name}, {context.area}")
+page = st.session_state.page
+compare_name = context.compare.name if context.compare is not None else "run B"
+st.title(page)
+st.markdown(
+    QUESTIONS[page].format(
+        area=context.area, run=context.run.name, compare=compare_name
+    )
+)
 RENDER[st.session_state.page](context)
 sync_query_params()

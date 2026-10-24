@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 """
-P2 zone explorer: metric map, hourly prices and duration, profile, density and error heatmap of one area.
+Zone detail: prices of one area in the period with duration, daily profile, density and month by hour error.
 """
 
 import numpy as np
@@ -11,76 +11,30 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from dashboard.data import aggregate, month_hour_errors, tail_shares
-from dashboard.state import follow_selection
 from dashboard.views.common import (
+    CHART_HEIGHT,
+    MONTHS,
     Context,
     event_markers,
     heatmap,
     price_traces,
-    show,
+    takeaway,
 )
-from scripts.evaluate_price_backcast import duration_curve, price_metrics
+from scripts.evaluate_price_backcast import duration_curve
 from scripts.lib.backcast_plotting import (
     DENSITY,
-    DIVERGING,
     MODEL_COLOR,
     OBSERVED_COLOR,
     SEASONS,
     SECOND_COLOR,
     cet_hour,
-    symmetric_limit,
 )
 
-MAP_METRICS = {
-    "bias": "mean_bias",
-    "MAE": "mae",
-    "r": "pearson_r",
-    "std ratio": "std_ratio",
-    "Δ MAE vs B": "delta_mae",
-}
-DIVERGING_METRICS = {"mean_bias", "delta_mae"}
 HISTOGRAM_BINS = 80
 
 
-def bus_metrics(ctx: Context) -> pd.DataFrame:
-    """Price metrics per bus in the period with the MAE change against a same-year comparison."""
-    observed = ctx.run.observed.loc[ctx.hours]
-    metrics = price_metrics(ctx.run.model.loc[ctx.hours], observed)
-    if ctx.same_year:
-        second = price_metrics(ctx.compare.model.loc[ctx.hours], observed)
-        metrics["delta_mae"] = metrics.mae - second.mae
-    return metrics
-
-
-def zone_map(ctx: Context, values: pd.Series, column: str) -> go.Figure:
-    """Choropleth of a bus metric over the bus regions, carrying the area of each bus."""
-    limit = symmetric_limit(values)
-    scale = (
-        dict(colorscale=DIVERGING, zmid=0, zmin=-limit, zmax=limit)
-        if column in DIVERGING_METRICS
-        else dict(colorscale="Viridis")
-    )
-    fig = go.Figure(
-        go.Choropleth(
-            geojson=ctx.run.regions,
-            featureidkey="properties.name",
-            locations=values.index,
-            z=values.to_numpy(),
-            customdata=ctx.run.area_to_bus[values.index].to_numpy(),
-            hovertemplate="%{customdata} (%{location}): %{z:.2f}<extra></extra>",
-            marker_line_width=0.3,
-            **scale,
-        )
-    )
-    fig.update_geos(fitbounds="locations", visible=False, projection_type="mercator")
-    fig.update_layout(
-        height=520, margin=dict(l=0, r=0, t=0, b=0), clickmode="event+select"
-    )
-    return fig
-
-
 def hourly_line(ctx: Context) -> go.Figure:
-    """Model, observed and comparison prices of the year with the period shaded and zoomed."""
+    """Model, observed and comparison prices of the year zoomed to the period."""
     model = ctx.run.area_model[ctx.area]
     observed = ctx.run.area_observed[ctx.area]
     second = ctx.compare.area_model(ctx.run.buses)[ctx.area] if ctx.same_year else None
@@ -94,11 +48,13 @@ def hourly_line(ctx: Context) -> go.Figure:
         shedding = shedding[ctx.bus]
         fig.add_traces(event_markers(model, shedding))
     start, end = ctx.hours[[0, -1]]
-    if len(ctx.hours) < len(model):
-        fig.add_vrect(x0=start, x1=end, fillcolor="grey", opacity=0.1, line_width=0)
-    fig.update_xaxes(range=[start, end], rangeslider=dict(visible=True))
+    fig.update_xaxes(range=[start, end])
     fig.update_layout(
-        height=520, hovermode="x unified", yaxis_title="€/MWh", margin=dict(t=20)
+        height=CHART_HEIGHT,
+        hovermode="x unified",
+        yaxis_title="€/MWh",
+        margin=dict(t=30, b=30),
+        legend=dict(orientation="h", y=1.08, x=0),
     )
     return fig
 
@@ -121,10 +77,14 @@ def duration(series: list[tuple[str, pd.Series, str]]) -> None:
     for name, prices, color in series:
         curve = duration_curve(prices)
         fig.add_scatter(x=curve.index, y=curve, name=name, line=dict(color=color))
-    fig.update_layout(xaxis_title="share of hours", yaxis_title="€/MWh", height=420)
-    st.plotly_chart(fig, width="stretch")
+    fig.update_layout(
+        xaxis_title="share of hours", yaxis_title="€/MWh", height=CHART_HEIGHT
+    )
+    left, right = st.columns([3, 1])
+    left.plotly_chart(fig, width="stretch")
     shares = pd.DataFrame({name: tail_shares(prices) for name, prices, _ in series})
-    st.dataframe(shares.style.format("{:.1%}"))
+    right.markdown("**Share of hours by price (€/MWh)**")
+    right.dataframe(shares.style.format("{:.1%}"))
 
 
 def profiles(series: list[tuple[str, pd.Series, str]]) -> None:
@@ -138,7 +98,12 @@ def profiles(series: list[tuple[str, pd.Series, str]]) -> None:
             fig.add_scatter(
                 x=profile.index, y=profile, name=name, line=dict(color=color)
             )
-        fig.update_layout(title=season, xaxis_title="hour (CET)", yaxis_title="€/MWh")
+        fig.update_layout(
+            title=season,
+            xaxis_title="hour (CET)",
+            yaxis_title="€/MWh",
+            height=CHART_HEIGHT,
+        )
         column.plotly_chart(fig, width="stretch")
 
 
@@ -158,35 +123,53 @@ def density(model: pd.Series, observed: pd.Series) -> go.Figure:
         x=bounds, y=bounds, mode="lines", line=dict(color="black"), name="identity"
     )
     fig.update_layout(
-        xaxis_title="observed €/MWh", yaxis_title="model €/MWh", height=500
+        xaxis_title="observed (€/MWh)",
+        yaxis_title="model (€/MWh)",
+        height=CHART_HEIGHT + 80,
+        width=CHART_HEIGHT + 180,
     )
     return fig
 
 
+def lead(ctx: Context, series: list[tuple[str, pd.Series, str]]) -> str:
+    """Summarise the price fit of the area in the period and its rank among all areas."""
+    metrics = ctx.metrics()
+    row = metrics.loc[ctx.area]
+    rank = int(metrics.mae.rank()[ctx.area])
+    (_, observed, _), (_, model, _) = series[:2]
+    return (
+        f"In {ctx.period}, **{ctx.area}** has MAE **{row.mae:.1f} €/MWh** "
+        f"(rank {rank} of {len(metrics)}, 1 = best), Pearson r **{row.pearson_r:.2f}** "
+        f"and bias **{row.mean_bias:+.1f} €/MWh**. Mean price: observed {observed.mean():.1f}, "
+        f"model {model.mean():.1f} €/MWh. Hours at or below 0 €/MWh: observed "
+        f"{(observed <= 0).mean():.1%}, model {(model <= 0).mean():.1%}."
+    )
+
+
 def render(ctx: Context) -> None:
-    """Draw the zone explorer page."""
-    left, right = st.columns([2, 3])
-    with left:
-        options = [m for m in MAP_METRICS if ctx.same_year or m != "Δ MAE vs B"]
-        name = st.selectbox("Map metric", options, key="map_metric")
-        values = bus_metrics(ctx)[MAP_METRICS[name]]
-        points = show(zone_map(ctx, values, MAP_METRICS[name]), "zone_map", select=True)
-        if points:
-            area = points[0]["customdata"]
-            follow_selection("zone_map", (area,), area=area)
-    with right:
-        st.plotly_chart(hourly_line(ctx), width="stretch")
+    """Draw the zone detail page."""
     series = period_series(ctx)
-    tabs = st.tabs(["duration", "daily profile", "density", "month × hour error"])
+    takeaway(lead(ctx, series))
+    st.plotly_chart(hourly_line(ctx), width="stretch")
+    if ctx.compare is not None and not ctx.same_year:
+        st.caption(f"{ctx.compare.name} covers another year and is not overlaid.")
+    tabs = st.tabs(
+        [
+            "Duration curve",
+            "Daily profile",
+            "Model vs observed",
+            "Error by month and hour",
+        ]
+    )
     with tabs[0]:
         duration(series)
     with tabs[1]:
         profiles(series)
     with tabs[2]:
-        st.plotly_chart(density(series[1][1], series[0][1]), width="stretch")
+        st.plotly_chart(density(series[1][1], series[0][1]))
     with tabs[3]:
+        st.caption("Mean error model minus observed, €/MWh, whole year.")
         error = ctx.run.area_model[ctx.area] - ctx.run.area_observed[ctx.area]
         table = month_hour_errors(error, cet_hour(error.index))
-        st.plotly_chart(heatmap(table, "mean error (€/MWh)"), width="stretch")
-    if ctx.compare is not None and not ctx.same_year:
-        st.info(f"{ctx.compare.name} covers another year, hourly overlays disabled")
+        table = table.set_axis([MONTHS[m - 1] for m in table.index])
+        st.plotly_chart(heatmap(table, "€/MWh"), width="stretch")

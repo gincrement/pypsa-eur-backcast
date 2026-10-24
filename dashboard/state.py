@@ -20,7 +20,7 @@ DEFAULTS: dict[str, Any] = {
     "month": 1,
     "start": "",
     "end": "",
-    "agg": "hourly",
+    "agg": "auto",
 }
 PENDING = "_pending"
 

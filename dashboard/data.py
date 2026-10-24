@@ -28,10 +28,10 @@ PRESETS = ["year", "month", "winter week", "summer week", "custom"]
 AGGREGATIONS = {"hourly": None, "daily": "D"}
 TOP_SHARE = 0.01
 KPIS = {
-    "median MAE": ("mae", "median"),
-    "median r": ("pearson_r", "median"),
-    "median |bias|": ("abs_bias", "median"),
-    "zero-price share": ("zero_share_model", "mean"),
+    "median MAE (€/MWh)": ("mae", "median"),
+    "median MAE / mean price": ("rel_mae", "median"),
+    "median Pearson r": ("pearson_r", "median"),
+    "median |bias| (€/MWh)": ("abs_bias", "median"),
 }
 
 
@@ -174,9 +174,15 @@ def aggregate(frame: pd.DataFrame | pd.Series, aggregation: str) -> pd.DataFrame
 
 
 def area_metrics(model: pd.DataFrame, observed: pd.DataFrame) -> pd.DataFrame:
-    """Compute the price metrics per area with the absolute bias."""
+    """Compute the price metrics per area with absolute bias, relative MAE and shares of hours at or below zero."""
     metrics = price_metrics(model, observed).rename_axis("area")
-    return metrics.assign(abs_bias=metrics.mean_bias.abs())
+    return metrics.assign(
+        abs_bias=metrics.mean_bias.abs(),
+        rel_mae=metrics.mae / metrics.mean_observed,
+        nonpositive_model=metrics.zero_share_model + metrics.negative_share_model,
+        nonpositive_observed=metrics.zero_share_observed
+        + metrics.negative_share_observed,
+    )
 
 
 def kpis(metrics: pd.DataFrame) -> dict[str, float]:
