@@ -78,7 +78,7 @@ def get_compose_inputs(w):
             else []
         ),
         area_to_bus=(
-            "data/entsoe_area_to_bus.csv"
+            cfg["backcast"]["area_to_bus"]
             if elec["cross_border_capacities"] == "ntc" or calibrate
             else []
         ),

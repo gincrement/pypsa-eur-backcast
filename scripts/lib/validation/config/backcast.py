@@ -11,7 +11,7 @@ See docs in https://pypsa-eur.readthedocs.io/en/latest/configuration/#backcast_c
 import datetime
 from typing import Annotated, Literal
 
-from pydantic import Field, PositiveFloat, field_validator
+from pydantic import Field, PositiveFloat, field_validator, model_validator
 
 from scripts.lib.validation.config._base import ConfigModel
 
@@ -63,6 +63,14 @@ class HybridCapacitiesConfig(ConfigModel):
 class BackcastConfig(ConfigModel):
     """Configuration for `backcast` settings."""
 
+    area_to_bus: str = Field(
+        "data/entsoe_area_to_bus.csv",
+        description="CSV file with the many-to-one map from model buses (`bus`) to ENTSO-E bidding zone areas (`entsoe_area`), e.g. `data/entsoe_area_to_bus-2019.csv` for the Italian bidding zones before 2021, in which the Calabria bus `ITCA` maps to the virtual zone `IT_ROSN`.",
+    )
+    borders: str = Field(
+        "data/entsoe_borders.csv",
+        description="CSV file with the ENTSO-E bidding zone borders (`area0`, `area1`) whose cross-border capacities are retrieved, used with `electricity: cross_border_capacities: ntc`, e.g. `data/entsoe_borders-2019.csv` for the Italian bidding zones before 2021.",
+    )
     exclude_price_areas: list[str] = Field(
         default_factory=list,
         description="ENTSO-E bidding zone areas without published day-ahead prices for the whole snapshot range, e.g. `GB` after 2020, `BA` and `XK`, or `AL`, `ME` and `MK` whose markets started during 2023. Buses mapped to these areas in `data/entsoe_area_to_bus.csv` are omitted from the observed day-ahead prices.",
@@ -97,7 +105,7 @@ class BackcastConfig(ConfigModel):
 
     calibrate_wind: bool = Field(
         False,
-        description="Scale the onshore and offshore wind availability (`p_max_pu`) per ENTSO-E area in `data/entsoe_area_to_bus.csv` so that the available energy matches the actual generation reported by the ENTSO-E Transparency Platform plus `wind_curtailment_twh`. Only months with actual generation of the carrier are compared. One factor per area and carrier, `p_max_pu` is clipped at 1. Generators of areas without actual generation of their carrier or excluded in `wind_calibration_exclude` keep their availability. Requires `foresight: overnight`.",
+        description="Scale the onshore and offshore wind availability (`p_max_pu`) per ENTSO-E area in `data/entsoe_area_to_bus.csv` so that the available energy matches the actual generation reported by the ENTSO-E Transparency Platform plus `wind_curtailment_twh`. Only months with actual generation of the carrier are compared. One factor per area and carrier, `p_max_pu` is clipped at 1. Wind carriers with capacity but without actual generation in an area that publishes generation, e.g. offshore wind in `IE_SEM`, get zero availability. Areas without published generation are scaled to `wind_target_twh` or keep their availability, as do carriers excluded in `wind_calibration_exclude`. Requires `foresight: overnight`.",
     )
     wind_calibration_exclude: dict[str, list[Literal["onwind", "offwind"]]] = Field(
         default_factory=dict,
@@ -117,6 +125,12 @@ class BackcastConfig(ConfigModel):
         default_factory=dict,
         description="Curtailed wind energy in TWh per ENTSO-E area added to the actual generation with `calibrate_wind`, either per carrier like `DE_LU: {onwind: 6, offwind: 4}` or as a total split between onshore and offshore wind by their actual generation. The ENTSO-E actual generation is reported after curtailment, e.g. after redispatch in `DE_LU`.",
     )
+    wind_target_twh: dict[
+        str, dict[Literal["onwind", "offwind"], Annotated[float, Field(ge=0)]]
+    ] = Field(
+        default_factory=dict,
+        description="Wind energy in TWh per carrier over all snapshots for ENTSO-E areas without published actual generation (`exclude_generation_areas`), to which `calibrate_wind` scales their availability instead of the ENTSO-E data, e.g. `GB: {onwind: 32.5, offwind: 49.6}` from DESNZ Energy Trends for 2023. Not allowed for areas with published generation or carriers in `wind_calibration_exclude`.",
+    )
     monthly_nuclear_availability: bool = Field(
         False,
         description="Set the nuclear availability (`p_max_pu`) per ENTSO-E area in `data/entsoe_area_to_bus.csv` and month to the actual monthly capacity factor, i.e. the actual generation divided by the hours with data and the nuclear capacity of the area, clipped to [0, 1]. After the last operating date in `nuclear_phase_out` the availability is zero. Every month before it must have actual generation, otherwise an error is raised. Areas in `exclude_generation_areas` keep their availability. Requires `foresight: overnight`.",
@@ -131,7 +145,7 @@ class BackcastConfig(ConfigModel):
     )
     exclude_generation_areas: list[str] = Field(
         default_factory=list,
-        description="ENTSO-E areas without actual generation published on the ENTSO-E Transparency Platform for the snapshot years, e.g. `GB` after 2020. Their actual generation is not retrieved and their generators keep their availability with `calibrate_wind` and `monthly_nuclear_availability`. Other areas without published data raise an error during retrieval.",
+        description="ENTSO-E areas without actual generation published on the ENTSO-E Transparency Platform for the snapshot years, e.g. `GB` after 2020. Their actual generation is not retrieved and their generators keep their availability with `calibrate_wind`, unless given in `wind_target_twh`, and `monthly_nuclear_availability`. Other areas without published data raise an error during retrieval.",
     )
     hybrid_capacities: HybridCapacitiesConfig = Field(
         default_factory=HybridCapacitiesConfig,
@@ -168,3 +182,14 @@ class BackcastConfig(ConfigModel):
             f"Wind calibration factor bounds must be ascending: {value}"
         )
         return value
+
+    @model_validator(mode="after")
+    def check_wind_target_areas(self) -> "BackcastConfig":
+        """Require wind targets only for areas without published generation."""
+        published = sorted(
+            set(self.wind_target_twh) - set(self.exclude_generation_areas)
+        )
+        assert not published, (
+            f"backcast: wind_target_twh given for areas not in exclude_generation_areas: {published}"
+        )
+        return self

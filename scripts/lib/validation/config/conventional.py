@@ -8,7 +8,10 @@ Conventional generators configuration.
 See docs in https://pypsa-eur.readthedocs.io/en/latest/configuration/#conventional_cf
 """
 
-from pydantic import BaseModel, ConfigDict, Field
+import datetime
+from typing import Annotated
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from scripts.lib.validation.config._base import ConfigModel
 
@@ -81,6 +84,39 @@ class _MarginalCostSpreadConfig(BaseModel):
     )
 
 
+class _GasPriceCapConfig(BaseModel):
+    """Configuration for `conventional.gas_price_cap` settings."""
+
+    enable: bool = Field(
+        False,
+        description="Cap the gas price of the CCGT and OCGT generators in `countries`, like the Iberian exception of 2022-2023, which capped the gas price for power generation in Spain and Portugal. The fuel price is clipped before the marginal cost and its spread are computed. Requires `dynamic_fuel_price`.",
+    )
+    countries: list[str] = Field(
+        default_factory=list,
+        description="Countries whose gas-fired generators get the capped gas price, e.g. `[ES, PT]`.",
+    )
+    cap: dict[str, Annotated[float, Field(ge=0)]] = Field(
+        default_factory=dict,
+        description='Gas price cap in EUR/MWh_th from a quoted ISO date until the next one, e.g. `{"2023-01-01": 45, "2023-01-14": 50}`. The gas price is uncapped before the first date.',
+    )
+
+    @field_validator("cap")
+    @classmethod
+    def check_cap_dates(cls, value: dict[str, float]) -> dict[str, float]:
+        """Require ISO dates like `2023-01-14`."""
+        for date in value:
+            datetime.date.fromisoformat(date)
+        return value
+
+    @model_validator(mode="after")
+    def check_complete(self) -> "_GasPriceCapConfig":
+        """Require countries and caps when enabled."""
+        assert not self.enable or (self.countries and self.cap), (
+            "conventional: gas_price_cap requires countries and cap when enabled."
+        )
+        return self
+
+
 class ConventionalConfig(ConfigModel):
     """Configuration for `conventional` settings."""
 
@@ -93,6 +129,10 @@ class ConventionalConfig(ConfigModel):
     marginal_cost_spread: _MarginalCostSpreadConfig = Field(
         default_factory=_MarginalCostSpreadConfig,
         description="Linear increase of the marginal cost of thermal generators with their output.",
+    )
+    gas_price_cap: _GasPriceCapConfig = Field(
+        default_factory=_GasPriceCapConfig,
+        description="Cap of the gas price of gas-fired generators per country and period.",
     )
     unit_commitment: bool = Field(
         False,
@@ -115,3 +155,11 @@ class ConventionalConfig(ConfigModel):
         default_factory=lambda: {"p_max_pu": "data/nuclear_p_max_pu.csv"},
         description="For any carrier/technology overwrite attributes as listed below.",
     )
+
+    @model_validator(mode="after")
+    def check_gas_price_cap_dynamic(self) -> "ConventionalConfig":
+        """Require dynamic fuel prices for the gas price cap."""
+        assert self.dynamic_fuel_price or not self.gas_price_cap.enable, (
+            "conventional: gas_price_cap requires dynamic_fuel_price."
+        )
+        return self

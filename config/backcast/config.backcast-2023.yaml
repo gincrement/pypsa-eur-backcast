@@ -55,8 +55,18 @@ conventional:
   marginal_cost_spread:
     enable: true
     carriers: [CCGT, OCGT, coal, lignite, oil]
-    spread: 0.3
+    spread: 0.45
     utilisation: 0.35
+  gas_price_cap:
+    enable: true
+    countries: [ES, PT]
+    cap:
+      "2023-01-01": 45
+      "2023-01-14": 50
+      "2023-02-14": 55
+      "2023-03-14": 60
+      "2023-04-14": 65
+      "2023-06-01": 70
 
 costs:
   year: 2020
@@ -116,7 +126,6 @@ backcast:
   wind_calibration_exclude:
     BA: [onwind]
     CH: [onwind]
-    DK_2: [onwind]
     ES: [offwind]
     FR: [offwind]
     HR: [onwind]
@@ -131,8 +140,12 @@ backcast:
     NL: [onwind]
     NO_2: [onwind]
     NO_3: [onwind]
+    NO_5: [onwind]
     SI: [onwind]
     XK: [onwind]
+  wind_calibration_factor_bounds: [0.35, 2.0]
+  wind_target_twh:
+    GB: {onwind: 32.5, offwind: 49.6}
   wind_curtailment_twh:
     DE_LU: {onwind: 6, offwind: 4}
   monthly_nuclear_availability: true

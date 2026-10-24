@@ -388,6 +388,16 @@
     "BackcastConfig": {
       "description": "Configuration for `backcast` settings.",
       "properties": {
+        "area_to_bus": {
+          "default": "data/entsoe_area_to_bus.csv",
+          "description": "CSV file with the many-to-one map from model buses (`bus`) to ENTSO-E bidding zone areas (`entsoe_area`), e.g. `data/entsoe_area_to_bus-2019.csv` for the Italian bidding zones before 2021, in which the Calabria bus `ITCA` maps to the virtual zone `IT_ROSN`.",
+          "type": "string"
+        },
+        "borders": {
+          "default": "data/entsoe_borders.csv",
+          "description": "CSV file with the ENTSO-E bidding zone borders (`area0`, `area1`) whose cross-border capacities are retrieved, used with `electricity: cross_border_capacities: ntc`, e.g. `data/entsoe_borders-2019.csv` for the Italian bidding zones before 2021.",
+          "type": "string"
+        },
         "exclude_price_areas": {
           "description": "ENTSO-E bidding zone areas without published day-ahead prices for the whole snapshot range, e.g. `GB` after 2020, `BA` and `XK`, or `AL`, `ME` and `MK` whose markets started during 2023. Buses mapped to these areas in `data/entsoe_area_to_bus.csv` are omitted from the observed day-ahead prices.",
           "items": {
@@ -447,7 +457,7 @@
         },
         "calibrate_wind": {
           "default": false,
-          "description": "Scale the onshore and offshore wind availability (`p_max_pu`) per ENTSO-E area in `data/entsoe_area_to_bus.csv` so that the available energy matches the actual generation reported by the ENTSO-E Transparency Platform plus `wind_curtailment_twh`. Only months with actual generation of the carrier are compared. One factor per area and carrier, `p_max_pu` is clipped at 1. Generators of areas without actual generation of their carrier or excluded in `wind_calibration_exclude` keep their availability. Requires `foresight: overnight`.",
+          "description": "Scale the onshore and offshore wind availability (`p_max_pu`) per ENTSO-E area in `data/entsoe_area_to_bus.csv` so that the available energy matches the actual generation reported by the ENTSO-E Transparency Platform plus `wind_curtailment_twh`. Only months with actual generation of the carrier are compared. One factor per area and carrier, `p_max_pu` is clipped at 1. Wind carriers with capacity but without actual generation in an area that publishes generation, e.g. offshore wind in `IE_SEM`, get zero availability. Areas without published generation are scaled to `wind_target_twh` or keep their availability, as do carriers excluded in `wind_calibration_exclude`. Requires `foresight: overnight`.",
           "type": "boolean"
         },
         "wind_calibration_exclude": {
@@ -499,6 +509,23 @@
           "description": "Curtailed wind energy in TWh per ENTSO-E area added to the actual generation with `calibrate_wind`, either per carrier like `DE_LU: {onwind: 6, offwind: 4}` or as a total split between onshore and offshore wind by their actual generation. The ENTSO-E actual generation is reported after curtailment, e.g. after redispatch in `DE_LU`.",
           "type": "object"
         },
+        "wind_target_twh": {
+          "additionalProperties": {
+            "additionalProperties": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "propertyNames": {
+              "enum": [
+                "onwind",
+                "offwind"
+              ]
+            },
+            "type": "object"
+          },
+          "description": "Wind energy in TWh per carrier over all snapshots for ENTSO-E areas without published actual generation (`exclude_generation_areas`), to which `calibrate_wind` scales their availability instead of the ENTSO-E data, e.g. `GB: {onwind: 32.5, offwind: 49.6}` from DESNZ Energy Trends for 2023. Not allowed for areas with published generation or carriers in `wind_calibration_exclude`.",
+          "type": "object"
+        },
         "monthly_nuclear_availability": {
           "default": false,
           "description": "Set the nuclear availability (`p_max_pu`) per ENTSO-E area in `data/entsoe_area_to_bus.csv` and month to the actual monthly capacity factor, i.e. the actual generation divided by the hours with data and the nuclear capacity of the area, clipped to [0, 1]. After the last operating date in `nuclear_phase_out` the availability is zero. Every month before it must have actual generation, otherwise an error is raised. Areas in `exclude_generation_areas` keep their availability. Requires `foresight: overnight`.",
@@ -519,7 +546,7 @@
           "type": "object"
         },
         "exclude_generation_areas": {
-          "description": "ENTSO-E areas without actual generation published on the ENTSO-E Transparency Platform for the snapshot years, e.g. `GB` after 2020. Their actual generation is not retrieved and their generators keep their availability with `calibrate_wind` and `monthly_nuclear_availability`. Other areas without published data raise an error during retrieval.",
+          "description": "ENTSO-E areas without actual generation published on the ENTSO-E Transparency Platform for the snapshot years, e.g. `GB` after 2020. Their actual generation is not retrieved and their generators keep their availability with `calibrate_wind`, unless given in `wind_target_twh`, and `monthly_nuclear_availability`. Other areas without published data raise an error during retrieval.",
           "items": {
             "type": "string"
           },
@@ -1018,6 +1045,31 @@
               "maximum": 1,
               "minimum": 0,
               "type": "number"
+            }
+          }
+        },
+        "gas_price_cap": {
+          "description": "Configuration for `conventional.gas_price_cap` settings.",
+          "properties": {
+            "enable": {
+              "default": false,
+              "description": "Cap the gas price of the CCGT and OCGT generators in `countries`, like the Iberian exception of 2022-2023, which capped the gas price for power generation in Spain and Portugal. The fuel price is clipped before the marginal cost and its spread are computed. Requires `dynamic_fuel_price`.",
+              "type": "boolean"
+            },
+            "countries": {
+              "description": "Countries whose gas-fired generators get the capped gas price, e.g. `[ES, PT]`.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "cap": {
+              "additionalProperties": {
+                "minimum": 0,
+                "type": "number"
+              },
+              "description": "Gas price cap in EUR/MWh_th from a quoted ISO date until the next one, e.g. `{\"2023-01-01\": 45, \"2023-01-14\": 50}`. The gas price is uncapped before the first date.",
+              "type": "object"
             }
           }
         },
@@ -8404,6 +8456,31 @@
         }
       }
     },
+    "_GasPriceCapConfig": {
+      "description": "Configuration for `conventional.gas_price_cap` settings.",
+      "properties": {
+        "enable": {
+          "default": false,
+          "description": "Cap the gas price of the CCGT and OCGT generators in `countries`, like the Iberian exception of 2022-2023, which capped the gas price for power generation in Spain and Portugal. The fuel price is clipped before the marginal cost and its spread are computed. Requires `dynamic_fuel_price`.",
+          "type": "boolean"
+        },
+        "countries": {
+          "description": "Countries whose gas-fired generators get the capped gas price, e.g. `[ES, PT]`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "cap": {
+          "additionalProperties": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "description": "Gas price cap in EUR/MWh_th from a quoted ISO date until the next one, e.g. `{\"2023-01-01\": 45, \"2023-01-14\": 50}`. The gas price is uncapped before the first date.",
+          "type": "object"
+        }
+      }
+    },
     "_HeatSourceMapConfig": {
       "description": "Configuration for `plotting.heat_source_map` settings.",
       "properties": {
@@ -12245,6 +12322,31 @@
             }
           }
         },
+        "gas_price_cap": {
+          "description": "Configuration for `conventional.gas_price_cap` settings.",
+          "properties": {
+            "enable": {
+              "default": false,
+              "description": "Cap the gas price of the CCGT and OCGT generators in `countries`, like the Iberian exception of 2022-2023, which capped the gas price for power generation in Spain and Portugal. The fuel price is clipped before the marginal cost and its spread are computed. Requires `dynamic_fuel_price`.",
+              "type": "boolean"
+            },
+            "countries": {
+              "description": "Countries whose gas-fired generators get the capped gas price, e.g. `[ES, PT]`.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "cap": {
+              "additionalProperties": {
+                "minimum": 0,
+                "type": "number"
+              },
+              "description": "Gas price cap in EUR/MWh_th from a quoted ISO date until the next one, e.g. `{\"2023-01-01\": 45, \"2023-01-14\": 50}`. The gas price is uncapped before the first date.",
+              "type": "object"
+            }
+          }
+        },
         "unit_commitment": {
           "default": false,
           "description": "Allow the overwrite of ramp_limit_up, ramp_limit_start_up, ramp_limit_shut_down, p_min_pu, min_up_time, min_down_time, and start_up_cost of conventional generators. Refer to the CSV file 'unit_commitment.csv'.",
@@ -12587,6 +12689,16 @@
     "backcast": {
       "description": "Configuration for `backcast` settings.",
       "properties": {
+        "area_to_bus": {
+          "default": "data/entsoe_area_to_bus.csv",
+          "description": "CSV file with the many-to-one map from model buses (`bus`) to ENTSO-E bidding zone areas (`entsoe_area`), e.g. `data/entsoe_area_to_bus-2019.csv` for the Italian bidding zones before 2021, in which the Calabria bus `ITCA` maps to the virtual zone `IT_ROSN`.",
+          "type": "string"
+        },
+        "borders": {
+          "default": "data/entsoe_borders.csv",
+          "description": "CSV file with the ENTSO-E bidding zone borders (`area0`, `area1`) whose cross-border capacities are retrieved, used with `electricity: cross_border_capacities: ntc`, e.g. `data/entsoe_borders-2019.csv` for the Italian bidding zones before 2021.",
+          "type": "string"
+        },
         "exclude_price_areas": {
           "description": "ENTSO-E bidding zone areas without published day-ahead prices for the whole snapshot range, e.g. `GB` after 2020, `BA` and `XK`, or `AL`, `ME` and `MK` whose markets started during 2023. Buses mapped to these areas in `data/entsoe_area_to_bus.csv` are omitted from the observed day-ahead prices.",
           "items": {
@@ -12646,7 +12758,7 @@
         },
         "calibrate_wind": {
           "default": false,
-          "description": "Scale the onshore and offshore wind availability (`p_max_pu`) per ENTSO-E area in `data/entsoe_area_to_bus.csv` so that the available energy matches the actual generation reported by the ENTSO-E Transparency Platform plus `wind_curtailment_twh`. Only months with actual generation of the carrier are compared. One factor per area and carrier, `p_max_pu` is clipped at 1. Generators of areas without actual generation of their carrier or excluded in `wind_calibration_exclude` keep their availability. Requires `foresight: overnight`.",
+          "description": "Scale the onshore and offshore wind availability (`p_max_pu`) per ENTSO-E area in `data/entsoe_area_to_bus.csv` so that the available energy matches the actual generation reported by the ENTSO-E Transparency Platform plus `wind_curtailment_twh`. Only months with actual generation of the carrier are compared. One factor per area and carrier, `p_max_pu` is clipped at 1. Wind carriers with capacity but without actual generation in an area that publishes generation, e.g. offshore wind in `IE_SEM`, get zero availability. Areas without published generation are scaled to `wind_target_twh` or keep their availability, as do carriers excluded in `wind_calibration_exclude`. Requires `foresight: overnight`.",
           "type": "boolean"
         },
         "wind_calibration_exclude": {
@@ -12698,6 +12810,23 @@
           "description": "Curtailed wind energy in TWh per ENTSO-E area added to the actual generation with `calibrate_wind`, either per carrier like `DE_LU: {onwind: 6, offwind: 4}` or as a total split between onshore and offshore wind by their actual generation. The ENTSO-E actual generation is reported after curtailment, e.g. after redispatch in `DE_LU`.",
           "type": "object"
         },
+        "wind_target_twh": {
+          "additionalProperties": {
+            "additionalProperties": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "propertyNames": {
+              "enum": [
+                "onwind",
+                "offwind"
+              ]
+            },
+            "type": "object"
+          },
+          "description": "Wind energy in TWh per carrier over all snapshots for ENTSO-E areas without published actual generation (`exclude_generation_areas`), to which `calibrate_wind` scales their availability instead of the ENTSO-E data, e.g. `GB: {onwind: 32.5, offwind: 49.6}` from DESNZ Energy Trends for 2023. Not allowed for areas with published generation or carriers in `wind_calibration_exclude`.",
+          "type": "object"
+        },
         "monthly_nuclear_availability": {
           "default": false,
           "description": "Set the nuclear availability (`p_max_pu`) per ENTSO-E area in `data/entsoe_area_to_bus.csv` and month to the actual monthly capacity factor, i.e. the actual generation divided by the hours with data and the nuclear capacity of the area, clipped to [0, 1]. After the last operating date in `nuclear_phase_out` the availability is zero. Every month before it must have actual generation, otherwise an error is raised. Areas in `exclude_generation_areas` keep their availability. Requires `foresight: overnight`.",
@@ -12718,7 +12847,7 @@
           "type": "object"
         },
         "exclude_generation_areas": {
-          "description": "ENTSO-E areas without actual generation published on the ENTSO-E Transparency Platform for the snapshot years, e.g. `GB` after 2020. Their actual generation is not retrieved and their generators keep their availability with `calibrate_wind` and `monthly_nuclear_availability`. Other areas without published data raise an error during retrieval.",
+          "description": "ENTSO-E areas without actual generation published on the ENTSO-E Transparency Platform for the snapshot years, e.g. `GB` after 2020. Their actual generation is not retrieved and their generators keep their availability with `calibrate_wind`, unless given in `wind_target_twh`, and `monthly_nuclear_availability`. Other areas without published data raise an error during retrieval.",
           "items": {
             "type": "string"
           },

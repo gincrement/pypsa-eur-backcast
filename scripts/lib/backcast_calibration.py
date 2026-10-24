@@ -63,6 +63,7 @@ def calibrate_wind(
     curtailment_twh: dict[str, float | dict[str, float]],
     exclude: dict[str, list[str]],
     factor_bounds: list[float],
+    target_twh: dict[str, dict[str, float]],
 ) -> None:
     """
     Scale the onshore and offshore wind availability per area to the actual generation.
@@ -71,10 +72,13 @@ def calibrate_wind(
     actual energy is the generation divided by the hours with data times the
     hours of the month. The target energy adds the curtailment of the area,
     given per carrier or as a total split by the actual generation. The
-    available energy of the model is taken over the same months. All generators
-    of a carrier in the area get the same factor for all snapshots,
-    ``p_max_pu`` is clipped at 1. Generators of carriers without actual
-    generation in their area or excluded in `exclude` keep their availability.
+    available energy of the model is taken over the same months. Areas without
+    published generation are scaled to the energy in `target_twh` over all
+    snapshots instead. All generators of a carrier in the area get the same
+    factor for all snapshots, ``p_max_pu`` is clipped at 1. Generators of a
+    carrier without actual generation in an area that publishes generation are
+    set to zero availability. Generators of areas without published generation
+    and without target or excluded in `exclude` keep their availability.
     Factors outside `factor_bounds` raise an error.
 
     Parameters
@@ -92,20 +96,39 @@ def calibrate_wind(
         Wind carriers per area whose availability is not calibrated.
     factor_bounds : list[float]
         Lower and upper bound of the calibration factors.
+    target_twh : dict[str, dict[str, float]]
+        Wind energy in TWh per carrier over all snapshots for areas without
+        published generation.
     """
     assert_known_areas(
-        [*curtailment_twh, *exclude], area_to_bus, "the wind calibration"
+        [*curtailment_twh, *exclude, *target_twh], area_to_bus, "the wind calibration"
     )
     ignored = sorted(set(curtailment_twh) & set(exclude))
     assert not ignored, (
         f"Wind curtailment given for areas with excluded carriers: {ignored}"
     )
+    published = generation.index.unique("area")
+    targeted_published = sorted(set(target_twh) & set(published))
+    assert not targeted_published, (
+        f"Wind targets given for areas with published generation: {targeted_published}"
+    )
+    overlap = sorted(
+        (area, carrier)
+        for area, targets in target_twh.items()
+        for carrier in set(targets) & set(exclude.get(area, []))
+    )
+    assert not overlap, f"Wind targets given for excluded carriers: {overlap}"
     g = n.generators
-    assert_mapped(g[g.carrier.str.startswith(tuple(WIND_CARRIERS))], area_to_bus)
+    wind = g.index[g.carrier.str.startswith(tuple(WIND_CARRIERS))]
+    assert_mapped(g.loc[wind], area_to_bus)
+    p_max_pu = n.generators_t.p_max_pu
+    static = wind.difference(p_max_pu.columns)
+    assert static.empty, (
+        f"Wind generators without time-varying p_max_pu: {static.tolist()}"
+    )
     gen_areas = g.bus.map(area_to_bus)
     weights = n.snapshot_weightings.generators
     months = snapshot_months(n)
-    p_max_pu = n.generators_t.p_max_pu
     power = carrier_generation(generation, WIND_CARRIERS)
     energy = (
         power * month_hours(n).reindex(power.index.get_level_values("month")).values
@@ -134,22 +157,33 @@ def calibrate_wind(
         curtailment = carrier_curtailment(value, area_energy)
         for carrier in WIND_CARRIERS:
             gens = g.index[gen_areas.eq(area) & g.carrier.str.startswith(carrier)]
-            gens = gens.intersection(p_max_pu.columns)
+            capacity = g.p_nom[gens].sum()
             if carrier in exclude.get(area, []):
                 logger.info(f"Excluded {carrier} in {area} from the wind calibration.")
                 continue
-            if carrier not in area_energy.index:
-                if not gens.empty:
+            if carrier in target_twh.get(area, {}):
+                mask = pd.Series(True, n.snapshots)
+                target = target_twh[area][carrier] * 1e6
+            elif carrier in area_energy.index:
+                mask = months.isin(energy[area][carrier].index)
+                target = area_energy[carrier] + curtailment[carrier]
+            elif area in published and capacity > 0:
+                p_max_pu[gens] = 0.0
+                logger.warning(
+                    f"No actual {carrier} generation published for {area}, setting "
+                    f"the availability of its {capacity:.0f} MW to zero."
+                )
+                continue
+            else:
+                if capacity > 0:
                     logger.info(
                         f"No actual {carrier} generation for {area}, keeping its availability."
                     )
                 continue
-            mask = months.isin(energy[area][carrier].index)
             before = available(p_max_pu[gens], mask)
             assert before > 0, (
-                f"Actual {carrier} generation in {area} without {carrier} generators."
+                f"Wind target or actual {carrier} generation in {area} without {carrier} generators."
             )
-            target = area_energy[carrier] + curtailment[carrier]
             factor = target / before
             assert lower <= factor <= upper, (
                 f"Wind calibration factor {factor:.2f} of {carrier} in {area} is outside "

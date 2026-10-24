@@ -459,7 +459,7 @@ rule build_fossil_fuel_prices:
 
 
 def modelled_entsoe_areas(w) -> set[str]:
-    area_to_bus = read_area_to_bus("data/entsoe_area_to_bus.csv")
+    area_to_bus = read_area_to_bus(config_provider("backcast", "area_to_bus")(w))
     countries = config_provider("countries")(w)
     return set(area_to_bus[area_to_bus.index.str[:2].isin(countries)])
 
@@ -481,7 +481,7 @@ def input_day_ahead_prices(w) -> list[str]:
 def input_cross_border_capacities(w) -> list[str]:
     areas = modelled_entsoe_areas(w)
     fixed = config_provider("backcast", "fixed_border_capacities")(w)
-    borders = pd.read_csv("data/entsoe_borders.csv")
+    borders = pd.read_csv(config_provider("backcast", "borders")(w))
     borders = borders[
         borders.area0.isin(areas)
         & borders.area1.isin(areas)
@@ -502,7 +502,7 @@ rule build_day_ahead_prices:
     """Builds hourly observed day-ahead prices per bus of the bidding zone clustered network."""
     input:
         prices=input_day_ahead_prices,
-        area_to_bus="data/entsoe_area_to_bus.csv",
+        area_to_bus=config_provider("backcast", "area_to_bus"),
         network=resources("networks/clustered.nc"),
     output:
         csv=resources("day_ahead_prices.csv"),
@@ -566,7 +566,7 @@ rule build_cross_border_capacities:
     """Builds hourly cross-border capacities between the buses of the bidding zone clustered network."""
     input:
         capacities=input_cross_border_capacities,
-        area_to_bus="data/entsoe_area_to_bus.csv",
+        area_to_bus=config_provider("backcast", "area_to_bus"),
         network=resources("networks/clustered.nc"),
     output:
         capacities=resources("cross_border_capacities.csv"),

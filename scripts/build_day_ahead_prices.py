@@ -10,7 +10,7 @@ means and restricted to the snapshots. Gaps of up to
 ``backcast: max_price_gap_hours`` (or the area specific value in
 ``backcast: max_price_gap_hours_by_area``) are kept as missing values and longer
 gaps raise an error. The bidding zones are mapped to the
-buses with ``data/entsoe_area_to_bus.csv``, where several buses may share one
+buses with ``backcast: area_to_bus``, where several buses may share one
 bidding zone. Buses of areas listed in ``backcast: exclude_price_areas`` are
 omitted.
 """

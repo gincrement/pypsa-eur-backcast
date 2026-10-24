@@ -102,6 +102,7 @@ def apply_backcast(
             backcast["wind_curtailment_twh"],
             backcast["wind_calibration_exclude"],
             backcast["wind_calibration_factor_bounds"],
+            backcast["wind_target_twh"],
         )
     if nuclear:
         apply_monthly_availability(

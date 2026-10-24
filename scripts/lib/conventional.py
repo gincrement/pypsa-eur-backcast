@@ -7,6 +7,8 @@ Operational limits and costs of generators applied once the network is composed.
 
 import logging
 
+import numpy as np
+import pandas as pd
 import pypsa
 
 logger = logging.getLogger(__name__)
@@ -54,3 +56,10 @@ def spread_marginal_cost(
         f"Spread the marginal cost of {len(gens)} generators by {spread} around "
         f"utilisation {utilisation}."
     )
+
+
+def cap_fuel_price(fuel_price: pd.DataFrame, cap: dict[str, float]) -> pd.DataFrame:
+    """Clip the fuel price per snapshot to the cap in force since the latest ISO date in `cap`, uncapped before the first date."""
+    steps = pd.Series(cap, dtype=float).rename(index=pd.Timestamp).sort_index()
+    limit = steps.reindex(fuel_price.index, method="ffill").fillna(np.inf)
+    return fuel_price.clip(upper=limit, axis=0)

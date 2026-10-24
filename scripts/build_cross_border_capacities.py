@@ -25,13 +25,13 @@ of the scheduled exchanges regardless of published capacities. All series are
 converted to UTC before resampling to hourly means.
 
 The borders are the lines and DC links between buses of different ENTSO-E
-areas in ``data/entsoe_area_to_bus.csv``. If several bus pairs share one area
+areas in ``backcast: area_to_bus``. If several bus pairs share one area
 border, its capacity is split in proportion to their physical transmission
 capacity. Copperplate connections and connections within one area are not
 considered. Borders listed in ``backcast: fixed_border_capacities`` get a
 constant capacity in both directions instead, either in MW or the physical
 capacity of the network. The build fails if any other border lacks data, e.g.
-if it is missing in ``data/entsoe_borders.csv``, which lists the borders to
+if it is missing in ``backcast: borders``, which lists the borders to
 retrieve.
 
 The first output holds the capacities in MW with columns ``<bus0>-><bus1>``,
@@ -79,7 +79,7 @@ def area_capacities(
     names = [border_name(*d) for d in directions]
     missing = [name for d, name in zip(directions, names) if d not in data.index]
     assert not missing, (
-        f"No cross-border capacity data for {missing}, check `data/entsoe_borders.csv`."
+        f"No cross-border capacity data for {missing}, check `backcast: borders`."
     )
     hourly = {
         name: data.loc[d, SOURCES].resample("h").mean().reindex(snapshots)

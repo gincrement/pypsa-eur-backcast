@@ -9,7 +9,12 @@ import pypsa
 import pytest
 from pydantic import ValidationError
 
-from scripts.lib.conventional import clip_p_min_pu, spread_marginal_cost
+from scripts.add_electricity import attach_conventional_generators
+from scripts.lib.conventional import (
+    cap_fuel_price,
+    clip_p_min_pu,
+    spread_marginal_cost,
+)
 from scripts.lib.validation.config.conventional import ConventionalConfig
 
 SNAPSHOTS = pd.date_range("2023-01-01", periods=3, freq="h")
@@ -91,3 +96,86 @@ def test_spread_marginal_cost_fails(network, carriers, extendable, match):
 def test_conventional_config_rejects_invalid_spread(spread):
     with pytest.raises(ValidationError):
         ConventionalConfig(marginal_cost_spread=spread)
+
+
+DAYS = pd.date_range("2023-01-13", periods=3, freq="D")
+CAP = {"2023-01-14": 50.0, "2023-01-15": 70.0}
+
+
+@pytest.mark.parametrize(
+    "cap, expected",
+    [
+        (CAP, [60.0, 50.0, 60.0]),
+        ({"2023-01-01": 45.0}, [45.0, 45.0, 45.0]),
+        ({"2023-02-01": 45.0}, [60.0, 60.0, 60.0]),
+    ],
+    ids=["steps", "before-snapshots", "after-snapshots"],
+)
+def test_cap_fuel_price(cap, expected):
+    fuel_price = pd.DataFrame({"a": 60.0, "b": 40.0}, index=DAYS)
+    result = cap_fuel_price(fuel_price, cap)
+    np.testing.assert_allclose(result.a, expected)
+    np.testing.assert_allclose(result.b, 40.0)
+
+
+def test_gas_price_cap_before_spread():
+    n = pypsa.Network()
+    n.set_snapshots(DAYS)
+    n.add("Bus", ["ES00", "FR00"], country=["ES", "FR"])
+    costs = pd.DataFrame(
+        {"fuel": 0.0, "VOM": 0.0, "CO2 intensity": 0.0}, index=["CCGT", "coal"]
+    )
+    ppl = pd.DataFrame(
+        {
+            "carrier": ["CCGT", "CCGT", "coal"],
+            "bus": ["ES00", "FR00", "ES00"],
+            "p_nom": 100.0,
+            "efficiency": 0.5,
+            "marginal_cost": 0.0,
+            "capital_cost": 0.0,
+            "build_year": 2000,
+            "lifetime": 50.0,
+        },
+        index=["ES CCGT", "FR CCGT", "ES coal"],
+    )
+    fuel_price = pd.DataFrame({"gas": 60.0, "coal": 60.0}, index=DAYS)
+    gas_cap = {"enable": True, "countries": ["ES"], "cap": CAP}
+    attach_conventional_generators(
+        n,
+        costs,
+        ppl,
+        ["CCGT", "coal"],
+        {"Generator": []},
+        set(),
+        {"gas_price_cap": gas_cap},
+        {},
+        fuel_price=fuel_price,
+    )
+    marginal_cost = n.generators_t.marginal_cost
+    np.testing.assert_allclose(marginal_cost["ES CCGT"], [120.0, 100.0, 120.0])
+    np.testing.assert_allclose(marginal_cost[["FR CCGT", "ES coal"]], 120.0)
+    spread_marginal_cost(n, ["CCGT"], 0.3, 0.5)
+    quadratic = n.generators.marginal_cost_quadratic
+    np.testing.assert_allclose(quadratic["ES CCGT"] * 100.0 / 0.3, 340.0 / 3)
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        {"gas_price_cap": {"enable": True, "cap": CAP}},
+        {"gas_price_cap": {"enable": True, "countries": ["ES"]}},
+        {"gas_price_cap": {"countries": ["ES"], "cap": {"January": 45.0}}},
+        {"gas_price_cap": {"countries": ["ES"], "cap": {"2023-01-01": -1.0}}},
+        {"gas_price_cap": {"enable": True, "countries": ["ES"], "cap": CAP}},
+    ],
+    ids=["no-countries", "no-cap", "invalid-date", "negative", "static-fuel-price"],
+)
+def test_conventional_config_rejects_invalid_gas_price_cap(config):
+    with pytest.raises(ValidationError):
+        ConventionalConfig(**config)
+
+
+def test_conventional_config_accepts_gas_price_cap():
+    gas_cap = {"enable": True, "countries": ["ES", "PT"], "cap": CAP}
+    config = ConventionalConfig(dynamic_fuel_price=True, gas_price_cap=gas_cap)
+    assert config.gas_price_cap.cap == CAP
