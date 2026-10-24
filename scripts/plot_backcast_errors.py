@@ -12,6 +12,12 @@ import numpy as np
 import pandas as pd
 from matplotlib.figure import Figure
 
+from scripts.lib.backcast_data import (
+    decile_errors,
+    hourly_errors,
+    monthly_mae,
+    top_errors,
+)
 from scripts.lib.backcast_plotting import (
     BAND_COLOR,
     DIVERGING,
@@ -22,7 +28,6 @@ from scripts.lib.backcast_plotting import (
     SHOWCASE_WIDTH,
     PriceInputs,
     area_heatmap,
-    cet_hour,
     separate_groups,
     symmetric_limit,
 )
@@ -70,16 +75,10 @@ def price_scorecard(d: PriceInputs) -> Figure:
     return fig
 
 
-def monthly_mae(d: PriceInputs) -> pd.DataFrame:
-    """Compute the monthly mean absolute error per area."""
-    error = d.area_error.abs()
-    return error.groupby(error.index.to_period("M")).mean()
-
-
 def bias_heatmap(d: PriceInputs) -> Figure:
     """Plot the monthly mean bias and mean absolute error per area."""
     bias = d.monthly_bias[d.buses.values].set_axis(d.buses.index, axis=1).T
-    mae = monthly_mae(d).T
+    mae = monthly_mae(d.area_error).T
     fig, axes = plt.subplots(1, 2, figsize=(12, area_height(len(bias))))
     limit = symmetric_limit(bias, 0.95)
     area_heatmap(axes[0], bias, DIVERGING, "mean bias (€/MWh)", (-limit, limit), True)
@@ -129,19 +128,6 @@ def error_map(d: PriceInputs) -> Figure:
     return fig
 
 
-def decile_errors(error: pd.DataFrame, observed: pd.DataFrame) -> pd.DataFrame:
-    """Compute the mean error per area and observed price decile of that area."""
-    deciles = observed.rank(pct=True).mul(10).apply(np.ceil).clip(1, 10)
-    return pd.DataFrame(
-        {area: error[area].groupby(deciles[area]).mean() for area in error}
-    ).T.set_axis(range(1, 11), axis=1)
-
-
-def top_errors(error: pd.DataFrame, observed: pd.DataFrame, top: float) -> pd.Series:
-    """Compute the mean error per area in the hours with the highest observed prices."""
-    return error.where(observed.ge(observed.quantile(1 - top))).mean()
-
-
 def price_error_by_level(d: PriceInputs) -> Figure:
     """Plot the mean error per area by observed price decile and in the top 1 % hours."""
     deciles = decile_errors(d.area_error, d.area_observed)
@@ -164,12 +150,6 @@ def price_error_by_level(d: PriceInputs) -> Figure:
         ax.tick_params(labelsize=6)
     fig.tight_layout()
     return fig
-
-
-def hourly_errors(error: pd.DataFrame, months: list[int]) -> pd.DataFrame:
-    """Compute the mean error per area and hour of day (CET) in the months."""
-    selected = error[error.index.month.isin(months)]
-    return selected.groupby(cet_hour(selected.index)).mean().T
 
 
 def price_error_by_hour(d: PriceInputs) -> Figure:

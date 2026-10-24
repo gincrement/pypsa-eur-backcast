@@ -26,13 +26,18 @@ from matplotlib.figure import Figure
 
 from scripts._helpers import configure_logging, set_scenario_config
 from scripts.evaluate_price_backcast import align_prices
+from scripts.lib.backcast_data import (
+    MIN_COVERAGE,
+    net_exchanges,
+    stacked_generation,
+)
 from scripts.lib.backcast_plotting import (
-    CARRIER_ORDER,
     DIVERGING,
     LOAD_SHEDDING,
     MODEL_COLOR,
     OBSERVED_COLOR,
     SEQUENTIAL,
+    STACK,
     area_flows,
     area_generation,
     area_heatmap,
@@ -46,7 +51,6 @@ from scripts.lib.backcast_plotting import (
 )
 from scripts.lib.entsoe import read_area_to_bus
 
-MIN_COVERAGE = 0.95
 DECOUPLING_SPREAD = 1.0
 OUTLIER_LABELS = 10
 DISPATCH_AREAS = ["DE_LU", "FR", "ES"]
@@ -59,7 +63,6 @@ MIX_GROUPS = {
     "solar": ["solar"],
 }
 MIX_COLOR_KEYS = {group: members[0] for group, members in MIX_GROUPS.items()}
-STACK = [*CARRIER_ORDER, LOAD_SHEDDING]
 
 
 @dataclass
@@ -309,19 +312,6 @@ def price_spreads(d: SystemInputs) -> Figure:
     return fig
 
 
-def net_exchanges(exchanges: pd.DataFrame) -> pd.DataFrame:
-    """Net scheduled exchanges per alphabetically oriented area border with sufficient coverage of both directions."""
-    pairs = {tuple(sorted(c.split("->"))) for c in exchanges.columns}
-    net = {}
-    for a, b in sorted(pairs):
-        forward = exchanges.get(f"{a}->{b}", pd.Series(np.nan, exchanges.index))
-        backward = exchanges.get(f"{b}->{a}", pd.Series(np.nan, exchanges.index))
-        flow = forward - backward
-        if flow.notna().mean() >= MIN_COVERAGE:
-            net[f"{a}->{b}"] = flow
-    return pd.DataFrame(net, index=exchanges.index)
-
-
 def area_net_export(flows: pd.DataFrame, areas: list[str]) -> pd.Series:
     """Annual net export in TWh per area from alphabetically oriented border flows."""
     totals = flows.sum() / 1e6
@@ -407,7 +397,7 @@ def dispatch_weeks(d: SystemInputs) -> Figure:
         for j, (name, (generation, price, color)) in enumerate(sources.items()):
             for k, week in enumerate(weeks.values()):
                 ax = axes[2 * i + j, k]
-                stack = generation.reindex(index=week, columns=STACK).fillna(0.0) / 1e3
+                stack = stacked_generation(generation, week)
                 ax.stackplot(
                     week, stack.T.to_numpy(), colors=[d.colors[c] for c in STACK], lw=0
                 )

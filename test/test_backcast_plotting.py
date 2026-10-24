@@ -8,6 +8,7 @@ import pandas as pd
 import pypsa
 import pytest
 
+from scripts.lib.backcast_data import decile_errors, hourly_errors, net_exchanges
 from scripts.lib.backcast_plotting import (
     area_flows,
     area_generation,
@@ -15,8 +16,7 @@ from scripts.lib.backcast_plotting import (
     representative_buses,
     select_weeks,
 )
-from scripts.plot_backcast_errors import decile_errors, hourly_errors
-from scripts.plot_backcast_system import area_net_export, net_exchanges
+from scripts.plot_backcast_system import area_net_export
 
 AREA_TO_BUS = pd.Series(
     {"DE00": "DE_LU", "LUG1": "DE_LU", "FR00": "FR", "IE00": "IE_SEM", "GBNI": "IE_SEM"}

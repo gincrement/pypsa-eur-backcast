@@ -65,6 +65,7 @@ CARRIER_ORDER = [
     "solar",
 ]
 LOAD_SHEDDING = "load shedding"
+STACK = [*CARRIER_ORDER, LOAD_SHEDDING]
 CARRIER_GROUPS = {
     "CCGT": "gas",
     "OCGT": "gas",
