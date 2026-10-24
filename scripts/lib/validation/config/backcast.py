@@ -25,11 +25,15 @@ class HybridCapacitiesConfig(ConfigModel):
 
     enable: bool = Field(
         False,
-        description="Raise the hourly capacity of border directions whose source is in `sources` and that touch one of the `areas` to at least `physical_factor` times the physical capacity (`s_nom` of lines, `p_nom` of DC links, as with `fixed_border_capacities: physical`) of the branches between the two buses, e.g. for the monthly maximum of scheduled exchanges in the flow-based Core region, which underestimates the available capacity. Requires `electricity: cross_border_capacities: ntc`.",
+        description="Raise the hourly capacity of border directions whose source is in `sources` and that connect two of the `areas` to at least `physical_factor` times `s_nom` of the lines plus `dc_physical_factor` times `p_nom` of the DC links between the two buses (the physical capacity, as with `fixed_border_capacities: physical`), e.g. for the monthly maximum of scheduled exchanges in the flow-based Core region, which underestimates the available capacity. Requires `electricity: cross_border_capacities: ntc`.",
     )
     physical_factor: Annotated[float, Field(gt=0)] = Field(
         0.7,
-        description="Share of the physical capacity used as lower bound of the capacity.",
+        description="Share of the nominal capacity `s_nom` of lines used as lower bound of the capacity.",
+    )
+    dc_physical_factor: Annotated[float, Field(gt=0)] = Field(
+        0.7,
+        description="Share of the nominal capacity `p_nom` of DC links used as lower bound of the capacity.",
     )
     sources: Annotated[
         list[Literal["ntc", "scheduled_exchange"]], Field(min_length=1)

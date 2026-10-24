@@ -44,6 +44,19 @@ conventional:
   estimate_efficiencies:
     enable: true
     reference_year: 2023
+  nuclear:
+    p_min_pu: 0.3
+  lignite:
+    p_min_pu: 0.3
+  biomass:
+    p_min_pu: 0.3
+  waste:
+    p_min_pu: 0.5
+  marginal_cost_spread:
+    enable: true
+    carriers: [CCGT, OCGT, coal, lignite, oil]
+    spread: 0.3
+    utilisation: 0.35
 
 costs:
   year: 2020
@@ -127,3 +140,9 @@ backcast:
     SE_4: SE_3
   nuclear_phase_out:
     DE_LU: "2023-04-15"
+  hybrid_capacities:
+    enable: true
+    physical_factor: 0.49
+    dc_physical_factor: 0.7
+    sources: [scheduled_exchange]
+    areas: [AT, BE, CZ, DE_LU, FR, HR, HU, NL, PL, RO, SI, SK]

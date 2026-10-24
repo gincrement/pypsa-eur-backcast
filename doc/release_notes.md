@@ -6,6 +6,8 @@
 <!-- Upcoming Release -->
 <!-- ================= -->
 
+* Feature: New option `conventional: marginal_cost_spread` lets the marginal cost of thermal generators rise linearly with their output (quadratic cost), and new option `backcast: hybrid_capacities: dc_physical_factor` sets the share of the DC link capacity separately from `physical_factor` for lines. Minimum generation `p_min_pu` of generators is now clipped to their time-varying `p_max_pu` when composing the network. The 2023 backcast uses must-run levels for nuclear, lignite, biomass and waste, the marginal cost spread and the hybrid Core capacities.
+
 * Fix: `lines: types` must now define a line type for the 380 kV level; the config validation fails early with a clear message instead of the workflow failing later ([#2166](https://github.com/PyPSA/pypsa-eur/issues/2166)).
 
 * Feature: New switches `industry: solid_biomass_for_industry_cc`, `industry: gas_for_industry_cc` and `industry: process_emissions_cc` to disable the carbon capture options for solid biomass for industry, gas for industry and industrial process emissions. All default to `true`, which matches the previous behaviour ([#2357](https://github.com/PyPSA/pypsa-eur/pull/2357)).

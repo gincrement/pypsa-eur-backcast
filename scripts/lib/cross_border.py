@@ -51,32 +51,37 @@ def raise_to_physical(
     area_to_bus: pd.Series,
     sources: pd.DataFrame,
     physical_factor: float,
+    dc_physical_factor: float,
     proxy_sources: list[str],
     areas: list[str],
 ) -> pd.DataFrame:
     """
-    Raise the capacities of directions with a source in `proxy_sources` touching `areas` to `physical_factor` times the physical capacity of their bus pair.
+    Raise the capacities of directions with a source in `proxy_sources` between two of the `areas` to a share of the physical capacity of their bus pair.
 
-    The physical capacity is the sum of ``s_nom`` of the lines and ``p_nom``
-    of the DC links between the two buses, as kept by
+    The lower bound is the sum of `physical_factor` times ``s_nom`` of the
+    lines and `dc_physical_factor` times ``p_nom`` of the DC links between the
+    two buses, whose nominal capacities are kept by
     ``backcast: fixed_border_capacities: physical``.
     """
     assert_known_areas(areas, area_to_bus, "backcast: hybrid_capacities: areas")
     branches = inter_zone_branches(n, area_to_bus)
-    physical = branches.groupby(["bus0", "bus1"]).capacity.sum()
+    factors = {"Line": physical_factor, "Link": dc_physical_factor}
+    factor = branches.index.get_level_values("component").map(factors)
+    physical = (
+        (branches.capacity * factor).groupby([branches.bus0, branches.bus1]).sum()
+    )
     selected = sources.source.isin(proxy_sources) & (
-        sources.area_from.isin(areas) | sources.area_to.isin(areas)
+        sources.area_from.isin(areas) & sources.area_to.isin(areas)
     )
     names = sources.index[selected].intersection(capacities.columns)
     floor = pd.Series(
-        [physical_factor * physical[tuple(sorted(name.split("->")))] for name in names],
-        index=names,
+        [physical[tuple(sorted(name.split("->")))] for name in names], index=names
     )
     raised = capacities.copy()
     raised[names] = capacities[names].clip(lower=floor, axis=1)
     logger.info(
-        f"Raised {len(names)} cross-border directions to {physical_factor} x physical "
-        f"capacity, mean capacity {capacities[names].mean().mean():.0f} -> "
+        f"Raised {len(names)} cross-border directions to {physical_factor} x line and "
+        f"{dc_physical_factor} x DC link capacity, mean capacity {capacities[names].mean().mean():.0f} -> "
         f"{raised[names].mean().mean():.0f} MW."
     )
     return raised

@@ -455,6 +455,16 @@ conventional:
         slope: 0.0
         year: 1960
         max: 0.33
+  marginal_cost_spread:
+    enable: false
+    carriers:
+    - CCGT
+    - OCGT
+    - coal
+    - lignite
+    - oil
+    spread: 0.3
+    utilisation: 0.35
   unit_commitment: false
   dynamic_fuel_price: false
   fuel_price_rolling_window: 6
@@ -559,6 +569,7 @@ backcast:
   hybrid_capacities:
     enable: false
     physical_factor: 0.7
+    dc_physical_factor: 0.7
     sources:
     - scheduled_exchange
     areas:

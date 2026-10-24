@@ -45,6 +45,7 @@ from scripts.lib.backcast_calibration import (
     calibrate_wind,
     read_generation,
 )
+from scripts.lib.conventional import clip_p_min_pu, spread_marginal_cost
 from scripts.lib.cross_border import apply_cross_border_capacities, raise_to_physical
 from scripts.lib.entsoe import read_area_to_bus
 from scripts.prepare_network import (
@@ -86,6 +87,7 @@ def apply_backcast(
                 area_to_bus,
                 pd.read_csv(inputs.cross_border_capacities_sources, index_col=0),
                 hybrid["physical_factor"],
+                hybrid["dc_physical_factor"],
                 hybrid["sources"],
                 hybrid["areas"],
             )
@@ -188,6 +190,17 @@ if __name__ == "__main__":
     adjustments = params.adjustments
     maybe_adjust_costs_and_potentials(n, adjustments["electricity"], current_horizon)
     maybe_adjust_costs_and_potentials(n, adjustments["sector"], current_horizon)
+
+    clip_p_min_pu(n)
+    spread = params.conventional["marginal_cost_spread"]
+    if spread["enable"]:
+        assert foresight == "overnight", (
+            "conventional.marginal_cost_spread requires overnight foresight, got "
+            f"'{foresight}'."
+        )
+        spread_marginal_cost(
+            n, spread["carriers"], spread["spread"], spread["utilisation"]
+        )
 
     sanitize_custom_columns(n)
     sanitize_carriers(n, config)

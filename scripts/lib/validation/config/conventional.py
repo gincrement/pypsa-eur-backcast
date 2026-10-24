@@ -57,6 +57,30 @@ class _EstimateEfficienciesConfig(BaseModel):
     )
 
 
+class _MarginalCostSpreadConfig(BaseModel):
+    """Configuration for `conventional.marginal_cost_spread` settings."""
+
+    enable: bool = Field(
+        False,
+        description="Let the marginal cost of each generator of `carriers` rise linearly with its output, from `mc * (1 - 2 * utilisation * spread)` at zero output to `mc * (1 + 2 * (1 - utilisation) * spread)` at `p_nom`, where `mc` is the mean marginal cost of the generator over all snapshots. This approximates the spread of heat rates and bids of the units behind an aggregated generator. It sets `marginal_cost_quadratic` and requires a solver supporting quadratic objectives. Applied after all fuel and emission costs are added.",
+    )
+    carriers: list[str] = Field(
+        default_factory=lambda: ["CCGT", "OCGT", "coal", "lignite", "oil"],
+        description="Generator carriers whose marginal cost is spread.",
+    )
+    spread: float = Field(
+        0.3,
+        ge=0,
+        description="Half the rise of the marginal cost from zero output to `p_nom` relative to the mean marginal cost.",
+    )
+    utilisation: float = Field(
+        0.35,
+        ge=0,
+        le=1,
+        description="Output relative to `p_nom` at which the marginal cost equals its mean.",
+    )
+
+
 class ConventionalConfig(ConfigModel):
     """Configuration for `conventional` settings."""
 
@@ -65,6 +89,10 @@ class ConventionalConfig(ConfigModel):
     estimate_efficiencies: _EstimateEfficienciesConfig = Field(
         default_factory=_EstimateEfficienciesConfig,
         description="Estimation of missing plant-level efficiencies.",
+    )
+    marginal_cost_spread: _MarginalCostSpreadConfig = Field(
+        default_factory=_MarginalCostSpreadConfig,
+        description="Linear increase of the marginal cost of thermal generators with their output.",
     )
     unit_commitment: bool = Field(
         False,

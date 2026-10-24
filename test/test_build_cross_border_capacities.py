@@ -21,6 +21,7 @@ from scripts.lib.cross_border import (
 
 SNAPSHOTS = pd.date_range("2023-01-31 22:00", periods=4, freq="h")
 AREA_TO_BUS = pd.Series({"DE00": "DE_LU", "LUG1": "DE_LU", "FR00": "FR"})
+AREAS = ["DE_LU", "FR"]
 
 
 @pytest.fixture
@@ -289,11 +290,11 @@ def test_apply_cross_border_capacities_raises_on_missing_border(network):
 @pytest.mark.parametrize(
     "sources, areas, expected",
     [
-        (["scheduled_exchange"], ["FR"], {"DE00->FR00": 1500.0, "FR00->DE00": 1500.0}),
-        (["scheduled_exchange"], ["PL"], {"DE00->FR00": 100.0, "FR00->DE00": 50.0}),
-        (["ntc"], ["DE_LU"], {"LUG1->FR00": 500.0, "FR00->LUG1": 500.0}),
+        (["scheduled_exchange"], AREAS, {"DE00->FR00": 1500.0, "FR00->DE00": 1500.0}),
+        (["scheduled_exchange"], ["FR"], {"DE00->FR00": 100.0, "FR00->DE00": 50.0}),
+        (["ntc"], AREAS, {"LUG1->FR00": 500.0, "FR00->LUG1": 500.0}),
     ],
-    ids=["raised", "other-areas", "other-source"],
+    ids=["raised", "one-end", "other-source"],
 )
 def test_apply_cross_border_capacities_hybrid(network, sources, areas, expected):
     network.lines.s_max_pu = 0.7
@@ -309,9 +310,8 @@ def test_apply_cross_border_capacities_hybrid(network, sources, areas, expected)
         },
         index=capacities.columns,
     )
-    area_to_bus = pd.concat([AREA_TO_BUS, pd.Series({"PL00": "PL"})])
     raised = raise_to_physical(
-        network, capacities, area_to_bus, border_sources, 0.5, sources, areas
+        network, capacities, AREA_TO_BUS, border_sources, 0.5, 0.5, sources, areas
     )
     apply_cross_border_capacities(network, raised, AREA_TO_BUS)
 
@@ -331,5 +331,41 @@ def test_apply_cross_border_capacities_hybrid(network, sources, areas, expected)
 def test_raise_to_physical_fails_on_unknown_area(network):
     with pytest.raises(AssertionError, match="Unknown ENTSO-E areas"):
         raise_to_physical(
-            network, pd.DataFrame(), AREA_TO_BUS, pd.DataFrame(), 0.5, ["ntc"], ["XX"]
+            network,
+            pd.DataFrame(),
+            AREA_TO_BUS,
+            pd.DataFrame(),
+            0.5,
+            0.5,
+            ["ntc"],
+            ["XX"],
         )
+
+
+@pytest.mark.parametrize(
+    "line_factor, dc_factor, expected",
+    [(0.49, 0.7, 0.49 * 3000 + 0.7 * 1000), (0.7, 0.7, 0.7 * 4000)],
+    ids=["separate", "uniform"],
+)
+def test_raise_to_physical_weights_lines_and_dc_links(
+    network, line_factor, dc_factor, expected
+):
+    network.add(
+        "Link", "DE-FR-DC", bus0="DE00", bus1="FR00", carrier="DC", p_nom=1000.0
+    )
+    names = ["DE00->FR00", "FR00->DE00"]
+    capacities = pd.DataFrame(0.0, index=SNAPSHOTS, columns=names)
+    border_sources = pd.DataFrame(
+        {"area_from": ["DE_LU", "FR"], "area_to": ["FR", "DE_LU"]}, index=names
+    ).assign(source="scheduled_exchange")
+    raised = raise_to_physical(
+        network,
+        capacities,
+        AREA_TO_BUS,
+        border_sources,
+        line_factor,
+        dc_factor,
+        ["scheduled_exchange"],
+        AREAS,
+    )
+    np.testing.assert_allclose(raised.values, expected)

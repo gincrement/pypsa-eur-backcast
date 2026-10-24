@@ -530,12 +530,18 @@
           "properties": {
             "enable": {
               "default": false,
-              "description": "Raise the hourly capacity of border directions whose source is in `sources` and that touch one of the `areas` to at least `physical_factor` times the physical capacity (`s_nom` of lines, `p_nom` of DC links, as with `fixed_border_capacities: physical`) of the branches between the two buses, e.g. for the monthly maximum of scheduled exchanges in the flow-based Core region, which underestimates the available capacity. Requires `electricity: cross_border_capacities: ntc`.",
+              "description": "Raise the hourly capacity of border directions whose source is in `sources` and that connect two of the `areas` to at least `physical_factor` times `s_nom` of the lines plus `dc_physical_factor` times `p_nom` of the DC links between the two buses (the physical capacity, as with `fixed_border_capacities: physical`), e.g. for the monthly maximum of scheduled exchanges in the flow-based Core region, which underestimates the available capacity. Requires `electricity: cross_border_capacities: ntc`.",
               "type": "boolean"
             },
             "physical_factor": {
               "default": 0.7,
-              "description": "Share of the physical capacity used as lower bound of the capacity.",
+              "description": "Share of the nominal capacity `s_nom` of lines used as lower bound of the capacity.",
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            "dc_physical_factor": {
+              "default": 0.7,
+              "description": "Share of the nominal capacity `p_nom` of DC links used as lower bound of the capacity.",
               "exclusiveMinimum": 0,
               "type": "number"
             },
@@ -982,6 +988,36 @@
               },
               "description": "Per carrier: efficiency `efficiency` of a plant built in `year`, rising by `slope` per later build year up to `max`.",
               "type": "object"
+            }
+          }
+        },
+        "marginal_cost_spread": {
+          "description": "Configuration for `conventional.marginal_cost_spread` settings.",
+          "properties": {
+            "enable": {
+              "default": false,
+              "description": "Let the marginal cost of each generator of `carriers` rise linearly with its output, from `mc * (1 - 2 * utilisation * spread)` at zero output to `mc * (1 + 2 * (1 - utilisation) * spread)` at `p_nom`, where `mc` is the mean marginal cost of the generator over all snapshots. This approximates the spread of heat rates and bids of the units behind an aggregated generator. It sets `marginal_cost_quadratic` and requires a solver supporting quadratic objectives. Applied after all fuel and emission costs are added.",
+              "type": "boolean"
+            },
+            "carriers": {
+              "description": "Generator carriers whose marginal cost is spread.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "spread": {
+              "default": 0.3,
+              "description": "Half the rise of the marginal cost from zero output to `p_nom` relative to the mean marginal cost.",
+              "minimum": 0,
+              "type": "number"
+            },
+            "utilisation": {
+              "default": 0.35,
+              "description": "Output relative to `p_nom` at which the marginal cost equals its mean.",
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
             }
           }
         },
@@ -2891,12 +2927,18 @@
       "properties": {
         "enable": {
           "default": false,
-          "description": "Raise the hourly capacity of border directions whose source is in `sources` and that touch one of the `areas` to at least `physical_factor` times the physical capacity (`s_nom` of lines, `p_nom` of DC links, as with `fixed_border_capacities: physical`) of the branches between the two buses, e.g. for the monthly maximum of scheduled exchanges in the flow-based Core region, which underestimates the available capacity. Requires `electricity: cross_border_capacities: ntc`.",
+          "description": "Raise the hourly capacity of border directions whose source is in `sources` and that connect two of the `areas` to at least `physical_factor` times `s_nom` of the lines plus `dc_physical_factor` times `p_nom` of the DC links between the two buses (the physical capacity, as with `fixed_border_capacities: physical`), e.g. for the monthly maximum of scheduled exchanges in the flow-based Core region, which underestimates the available capacity. Requires `electricity: cross_border_capacities: ntc`.",
           "type": "boolean"
         },
         "physical_factor": {
           "default": 0.7,
-          "description": "Share of the physical capacity used as lower bound of the capacity.",
+          "description": "Share of the nominal capacity `s_nom` of lines used as lower bound of the capacity.",
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        "dc_physical_factor": {
+          "default": 0.7,
+          "description": "Share of the nominal capacity `p_nom` of DC links used as lower bound of the capacity.",
           "exclusiveMinimum": 0,
           "type": "number"
         },
@@ -8717,6 +8759,36 @@
         }
       }
     },
+    "_MarginalCostSpreadConfig": {
+      "description": "Configuration for `conventional.marginal_cost_spread` settings.",
+      "properties": {
+        "enable": {
+          "default": false,
+          "description": "Let the marginal cost of each generator of `carriers` rise linearly with its output, from `mc * (1 - 2 * utilisation * spread)` at zero output to `mc * (1 + 2 * (1 - utilisation) * spread)` at `p_nom`, where `mc` is the mean marginal cost of the generator over all snapshots. This approximates the spread of heat rates and bids of the units behind an aggregated generator. It sets `marginal_cost_quadratic` and requires a solver supporting quadratic objectives. Applied after all fuel and emission costs are added.",
+          "type": "boolean"
+        },
+        "carriers": {
+          "description": "Generator carriers whose marginal cost is spread.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "spread": {
+          "default": 0.3,
+          "description": "Half the rise of the marginal cost from zero output to `p_nom` relative to the mean marginal cost.",
+          "minimum": 0,
+          "type": "number"
+        },
+        "utilisation": {
+          "default": 0.35,
+          "description": "Output relative to `p_nom` at which the marginal cost equals its mean.",
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        }
+      }
+    },
     "_MaxHoursConfig": {
       "description": "Configuration for `electricity.max_hours` settings.",
       "properties": {
@@ -12143,6 +12215,36 @@
             }
           }
         },
+        "marginal_cost_spread": {
+          "description": "Configuration for `conventional.marginal_cost_spread` settings.",
+          "properties": {
+            "enable": {
+              "default": false,
+              "description": "Let the marginal cost of each generator of `carriers` rise linearly with its output, from `mc * (1 - 2 * utilisation * spread)` at zero output to `mc * (1 + 2 * (1 - utilisation) * spread)` at `p_nom`, where `mc` is the mean marginal cost of the generator over all snapshots. This approximates the spread of heat rates and bids of the units behind an aggregated generator. It sets `marginal_cost_quadratic` and requires a solver supporting quadratic objectives. Applied after all fuel and emission costs are added.",
+              "type": "boolean"
+            },
+            "carriers": {
+              "description": "Generator carriers whose marginal cost is spread.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "spread": {
+              "default": 0.3,
+              "description": "Half the rise of the marginal cost from zero output to `p_nom` relative to the mean marginal cost.",
+              "minimum": 0,
+              "type": "number"
+            },
+            "utilisation": {
+              "default": 0.35,
+              "description": "Output relative to `p_nom` at which the marginal cost equals its mean.",
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            }
+          }
+        },
         "unit_commitment": {
           "default": false,
           "description": "Allow the overwrite of ramp_limit_up, ramp_limit_start_up, ramp_limit_shut_down, p_min_pu, min_up_time, min_down_time, and start_up_cost of conventional generators. Refer to the CSV file 'unit_commitment.csv'.",
@@ -12627,12 +12729,18 @@
           "properties": {
             "enable": {
               "default": false,
-              "description": "Raise the hourly capacity of border directions whose source is in `sources` and that touch one of the `areas` to at least `physical_factor` times the physical capacity (`s_nom` of lines, `p_nom` of DC links, as with `fixed_border_capacities: physical`) of the branches between the two buses, e.g. for the monthly maximum of scheduled exchanges in the flow-based Core region, which underestimates the available capacity. Requires `electricity: cross_border_capacities: ntc`.",
+              "description": "Raise the hourly capacity of border directions whose source is in `sources` and that connect two of the `areas` to at least `physical_factor` times `s_nom` of the lines plus `dc_physical_factor` times `p_nom` of the DC links between the two buses (the physical capacity, as with `fixed_border_capacities: physical`), e.g. for the monthly maximum of scheduled exchanges in the flow-based Core region, which underestimates the available capacity. Requires `electricity: cross_border_capacities: ntc`.",
               "type": "boolean"
             },
             "physical_factor": {
               "default": 0.7,
-              "description": "Share of the physical capacity used as lower bound of the capacity.",
+              "description": "Share of the nominal capacity `s_nom` of lines used as lower bound of the capacity.",
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            "dc_physical_factor": {
+              "default": 0.7,
+              "description": "Share of the nominal capacity `p_nom` of DC links used as lower bound of the capacity.",
               "exclusiveMinimum": 0,
               "type": "number"
             },
