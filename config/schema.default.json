@@ -1045,6 +1045,22 @@
               "maximum": 1,
               "minimum": 0,
               "type": "number"
+            },
+            "reference": {
+              "default": "nameplate",
+              "description": "Reference output of the spread. `nameplate` spreads the marginal cost over `p_nom` with `utilisation`. `observed` spreads it over `p_nom` scaled by the observed ENTSO-E peak generation relative to the summed `p_nom` per bidding zone area and carrier group (gas, coal, lignite, oil), capped at 1, with the observed mean relative to the observed peak as utilisation. Generators without observed generation keep `p_nom` and `utilisation`. Requires `backcast.area_to_bus` and the ENTSO-E generation data.",
+              "enum": [
+                "nameplate",
+                "observed"
+              ],
+              "type": "string"
+            },
+            "exclude_areas": {
+              "description": "ENTSO-E areas whose observed generation is not used for the `observed` reference, e.g. `[IE_SEM]`.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         },
@@ -8889,6 +8905,22 @@
           "maximum": 1,
           "minimum": 0,
           "type": "number"
+        },
+        "reference": {
+          "default": "nameplate",
+          "description": "Reference output of the spread. `nameplate` spreads the marginal cost over `p_nom` with `utilisation`. `observed` spreads it over `p_nom` scaled by the observed ENTSO-E peak generation relative to the summed `p_nom` per bidding zone area and carrier group (gas, coal, lignite, oil), capped at 1, with the observed mean relative to the observed peak as utilisation. Generators without observed generation keep `p_nom` and `utilisation`. Requires `backcast.area_to_bus` and the ENTSO-E generation data.",
+          "enum": [
+            "nameplate",
+            "observed"
+          ],
+          "type": "string"
+        },
+        "exclude_areas": {
+          "description": "ENTSO-E areas whose observed generation is not used for the `observed` reference, e.g. `[IE_SEM]`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       }
     },
@@ -12358,6 +12390,22 @@
               "maximum": 1,
               "minimum": 0,
               "type": "number"
+            },
+            "reference": {
+              "default": "nameplate",
+              "description": "Reference output of the spread. `nameplate` spreads the marginal cost over `p_nom` with `utilisation`. `observed` spreads it over `p_nom` scaled by the observed ENTSO-E peak generation relative to the summed `p_nom` per bidding zone area and carrier group (gas, coal, lignite, oil), capped at 1, with the observed mean relative to the observed peak as utilisation. Generators without observed generation keep `p_nom` and `utilisation`. Requires `backcast.area_to_bus` and the ENTSO-E generation data.",
+              "enum": [
+                "nameplate",
+                "observed"
+              ],
+              "type": "string"
+            },
+            "exclude_areas": {
+              "description": "ENTSO-E areas whose observed generation is not used for the `observed` reference, e.g. `[IE_SEM]`.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         },

@@ -26,6 +26,11 @@ def get_compose_inputs(w):
         cfg["backcast"]["calibrate_wind"]
         or cfg["backcast"]["monthly_nuclear_availability"]
     )
+    spread = cfg["conventional"]["marginal_cost_spread"]
+    observed_spread = spread["enable"] and spread["reference"] == "observed"
+    needs_area_to_bus = (
+        elec["cross_border_capacities"] == "ntc" or calibrate or observed_spread
+    )
 
     # Electricity-only inputs (always included)
     inputs = dict(
@@ -82,10 +87,9 @@ def get_compose_inputs(w):
             if elec["cross_border_capacities"] == "ntc"
             else []
         ),
-        area_to_bus=(
-            cfg["backcast"]["area_to_bus"]
-            if elec["cross_border_capacities"] == "ntc" or calibrate
-            else []
+        area_to_bus=cfg["backcast"]["area_to_bus"] if needs_area_to_bus else [],
+        entsoe_generation_hourly=(
+            resources("entsoe_generation_hourly.csv") if observed_spread else []
         ),
         entsoe_generation=(
             resources("entsoe_generation_monthly.csv") if calibrate else []

@@ -47,7 +47,7 @@ from scripts.lib.backcast_calibration import (
 )
 from scripts.lib.conventional import clip_p_min_pu, spread_marginal_cost
 from scripts.lib.cross_border import apply_cross_border_capacities, raise_to_physical
-from scripts.lib.entsoe import read_area_to_bus
+from scripts.lib.entsoe import assert_known_areas, read_area_to_bus
 from scripts.prepare_network import (
     apply_co2_budget_constraints,
     apply_temporal_aggregation,
@@ -113,6 +113,20 @@ def apply_backcast(
             backcast["nuclear_area_map"],
             backcast["nuclear_phase_out"],
         )
+
+
+def read_observed_generation(
+    inputs: InputFiles, exclude_areas: list[str]
+) -> tuple[pd.DataFrame, pd.Series]:
+    """Read the hourly ENTSO-E generation per area and carrier without `exclude_areas` and the area-to-bus map."""
+    area_to_bus = read_area_to_bus(inputs.area_to_bus)
+    assert_known_areas(
+        exclude_areas, area_to_bus, "conventional.marginal_cost_spread.exclude_areas"
+    )
+    generation = pd.read_csv(
+        inputs.entsoe_generation_hourly, index_col=0, header=[0, 1], parse_dates=True
+    ).drop(columns=exclude_areas, level="area", errors="ignore")
+    return generation, area_to_bus
 
 
 if __name__ == "__main__":
@@ -199,8 +213,13 @@ if __name__ == "__main__":
             "conventional.marginal_cost_spread requires overnight foresight, got "
             f"'{foresight}'."
         )
+        observed = (
+            read_observed_generation(inputs, spread["exclude_areas"])
+            if spread["reference"] == "observed"
+            else (None, None)
+        )
         spread_marginal_cost(
-            n, spread["carriers"], spread["spread"], spread["utilisation"]
+            n, spread["carriers"], spread["spread"], spread["utilisation"], *observed
         )
 
     sanitize_custom_columns(n)

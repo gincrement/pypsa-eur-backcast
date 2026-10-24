@@ -27,16 +27,60 @@ def clip_p_min_pu(n: pypsa.Network) -> None:
     logger.info(f"Clipped p_min_pu to p_max_pu for {len(clipped)} generators.")
 
 
+OBSERVED_GROUPS = {
+    "CCGT": "gas",
+    "OCGT": "gas",
+    "coal": "coal",
+    "lignite": "lignite",
+    "oil": "oil",
+}
+
+
+def observed_reference(
+    g: pd.DataFrame,
+    generation: pd.DataFrame,
+    area_to_bus: pd.Series,
+    utilisation: float,
+) -> tuple[pd.Series, pd.Series]:
+    """
+    Return the reference output and utilisation of the generators `g` from the observed generation.
+
+    Per ENTSO-E area and carrier group, the reference output scales ``p_nom``
+    by the observed peak relative to the summed ``p_nom``, capped at 1, and
+    the utilisation is the observed mean relative to the observed peak.
+    Generators without observed generation or with a zero peak keep ``p_nom``
+    and `utilisation`.
+    """
+    area = g.bus.map(area_to_bus)
+    group = g.carrier.map(OBSERVED_GROUPS)
+    key = pd.MultiIndex.from_arrays([area, group])
+    stats = generation.agg(["max", "mean"]).T.reindex(key).set_axis(g.index)
+    capacity = g.p_nom.groupby([area, group]).transform("sum")
+    factor = (stats["max"] / capacity).clip(upper=1)
+    observed = factor > 0
+    p_ref = g.p_nom.where(~observed, g.p_nom * factor)
+    observed_utilisation = stats["mean"] / stats["max"]
+    return p_ref, observed_utilisation.where(observed, utilisation)
+
+
 def spread_marginal_cost(
-    n: pypsa.Network, carriers: list[str], spread: float, utilisation: float
+    n: pypsa.Network,
+    carriers: list[str],
+    spread: float,
+    utilisation: float,
+    generation: pd.DataFrame | None = None,
+    area_to_bus: pd.Series | None = None,
 ) -> None:
     """
     Let the marginal cost of the generators of `carriers` rise linearly with their output.
 
     With the mean marginal cost ``mc`` of a generator over all snapshots, the
     marginal cost rises from ``mc * (1 - 2 * utilisation * spread)`` at zero
-    output to ``mc * (1 + 2 * (1 - utilisation) * spread)`` at ``p_nom`` by
-    shifting the linear and setting the quadratic marginal cost.
+    output to ``mc * (1 + 2 * (1 - utilisation) * spread)`` at the reference
+    output by shifting the linear and setting the quadratic marginal cost.
+    The reference output is ``p_nom``, or with the observed hourly
+    `generation` per area and carrier group and `area_to_bus` the one of
+    `observed_reference`.
     """
     g = n.generators
     missing = sorted(set(carriers) - set(g.carrier))
@@ -46,15 +90,20 @@ def spread_marginal_cost(
     assert invalid.empty, (
         f"Marginal cost spread requires fixed positive p_nom: {invalid.tolist()}"
     )
+    p_ref, utilisation = (
+        (g.p_nom[gens], utilisation)
+        if generation is None
+        else observed_reference(g.loc[gens], generation, area_to_bus, utilisation)
+    )
     mean = n.get_switchable_as_dense("Generator", "marginal_cost", inds=gens).mean()
     offset = 2 * utilisation * spread * mean
     dynamic = gens.intersection(n.generators_t.marginal_cost.columns)
     g.loc[gens, "marginal_cost"] -= offset
     n.generators_t.marginal_cost[dynamic] -= offset[dynamic]
-    g.loc[gens, "marginal_cost_quadratic"] = spread * mean / g.p_nom[gens]
+    g.loc[gens, "marginal_cost_quadratic"] = spread * mean / p_ref
     logger.info(
-        f"Spread the marginal cost of {len(gens)} generators by {spread} around "
-        f"utilisation {utilisation}."
+        f"Spread the marginal cost of {len(gens)} generators by {spread} over "
+        f"{'the observed peak' if generation is not None else 'p_nom'}."
     )
 
 

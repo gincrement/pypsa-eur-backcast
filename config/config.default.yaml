@@ -466,6 +466,8 @@ conventional:
     - oil
     spread: 0.3
     utilisation: 0.35
+    reference: nameplate
+    exclude_areas: []
   gas_price_cap:
     enable: false
     countries: []

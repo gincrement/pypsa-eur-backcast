@@ -77,6 +77,31 @@ def test_spread_marginal_cost(network, spread, utilisation):
 
 
 @pytest.mark.parametrize(
+    "gas, factor, utilisation",
+    [
+        ([12.0, 24.0, 18.0], 0.4, 0.75),
+        ([60.0, 90.0, 30.0], 1.0, 2 / 3),
+        ([0.0, 0.0, 0.0], 1.0, 0.35),
+        (None, 1.0, 0.35),
+    ],
+    ids=["below-p_nom", "above-p_nom", "zero-peak", "no-data"],
+)
+def test_spread_marginal_cost_observed(network, gas, factor, utilisation):
+    observed = {("FR", "gas"): [1.0, 2.0, 3.0]} | (
+        {("DE_LU", "gas"): gas} if gas else {}
+    )
+    generation = pd.DataFrame(observed, index=SNAPSHOTS)
+    area_to_bus = pd.Series({"DE00": "DE_LU"})
+    spread_marginal_cost(network, ["CCGT", "OCGT"], 0.3, 0.35, generation, area_to_bus)
+
+    g = network.generators.loc[["CCGT", "OCGT"]]
+    linear = network.get_switchable_as_dense("Generator", "marginal_cost")[g.index]
+    mean = pd.Series({"CCGT": 100.0, "OCGT": 150.0})
+    np.testing.assert_allclose(linear.mean(), mean * (1 - 2 * utilisation * 0.3))
+    np.testing.assert_allclose(g.marginal_cost_quadratic * g.p_nom, 0.3 * mean / factor)
+
+
+@pytest.mark.parametrize(
     "carriers, extendable, match",
     [
         (["CCGT", "oil"], False, "No generators"),
@@ -91,7 +116,13 @@ def test_spread_marginal_cost_fails(network, carriers, extendable, match):
 
 
 @pytest.mark.parametrize(
-    "spread", [{"spread": -0.1}, {"utilisation": 1.1}, {"utilisation": -0.1}]
+    "spread",
+    [
+        {"spread": -0.1},
+        {"utilisation": 1.1},
+        {"utilisation": -0.1},
+        {"reference": "peak"},
+    ],
 )
 def test_conventional_config_rejects_invalid_spread(spread):
     with pytest.raises(ValidationError):

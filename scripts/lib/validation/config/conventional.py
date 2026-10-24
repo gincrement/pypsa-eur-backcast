@@ -9,7 +9,7 @@ See docs in https://pypsa-eur.readthedocs.io/en/latest/configuration/#convention
 """
 
 import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -81,6 +81,14 @@ class _MarginalCostSpreadConfig(BaseModel):
         ge=0,
         le=1,
         description="Output relative to `p_nom` at which the marginal cost equals its mean.",
+    )
+    reference: Literal["nameplate", "observed"] = Field(
+        "nameplate",
+        description="Reference output of the spread. `nameplate` spreads the marginal cost over `p_nom` with `utilisation`. `observed` spreads it over `p_nom` scaled by the observed ENTSO-E peak generation relative to the summed `p_nom` per bidding zone area and carrier group (gas, coal, lignite, oil), capped at 1, with the observed mean relative to the observed peak as utilisation. Generators without observed generation keep `p_nom` and `utilisation`. Requires `backcast.area_to_bus` and the ENTSO-E generation data.",
+    )
+    exclude_areas: list[str] = Field(
+        default_factory=list,
+        description="ENTSO-E areas whose observed generation is not used for the `observed` reference, e.g. `[IE_SEM]`.",
     )
 
 
