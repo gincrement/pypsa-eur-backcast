@@ -26,7 +26,8 @@ electricity:
     Link: []
   transmission_limit: v1.0
   cross_border_capacities: ntc
-  powerplants_filter: "(DateOut >= 2019 or DateOut != DateOut) and (DateIn <= 2019 or DateIn != DateIn)"
+  powerplants_filter: "(DateOut >= 2019 or DateOut != DateOut) and (DateIn <= 2019 or DateIn != DateIn) and not (Country == 'NL' and Name in ['Magnum Eemshaven', 'Claus', 'Eem', 'Velsen'])"
+  custom_powerplants: "Country == 'NL' and (DateOut >= 2019 or DateOut != DateOut) and (DateIn <= 2019 or DateIn != DateIn)"
   estimate_renewable_capacities:
     from_powerplantmatching: false
     from_irenastat: true
@@ -58,6 +59,8 @@ conventional:
     carriers: [CCGT, OCGT, coal, lignite, oil]
     spread: 0.45
     utilisation: 0.35
+    reference: observed
+    exclude_areas: [IE_SEM]
 
 costs:
   year: 2020
