@@ -35,7 +35,9 @@ if it is missing in ``backcast: borders``, which lists the borders to
 retrieve.
 
 The first output holds the capacities in MW with columns ``<bus0>-><bus1>``,
-the second output the source and number of interpolated hours per direction.
+the second output the source and number of interpolated hours per direction,
+the third output the hourly scheduled commercial exchanges in MW per retrieved
+area direction ``<area0>-><area1>``, NaN where unpublished.
 """
 
 import logging
@@ -150,6 +152,23 @@ def build_capacities(
     ).T.rename_axis("border")
 
 
+def scheduled_exchanges(
+    data: pd.DataFrame, snapshots: pd.DatetimeIndex
+) -> pd.DataFrame:
+    """Return the hourly scheduled commercial exchanges per retrieved area direction in MW, NaN where unpublished."""
+    directions = data.index.droplevel("utc_timestamp").unique()
+    return pd.DataFrame(
+        {
+            border_name(*d): data.loc[d, "scheduled_exchange"]
+            .resample("h")
+            .mean()
+            .reindex(snapshots)
+            for d in directions
+        },
+        index=snapshots,
+    )
+
+
 def read_retrieved(fns: list[str]) -> pd.DataFrame:
     """Read retrieved cross-border data indexed by area pair and UTC timestamp."""
     data = pd.concat(
@@ -190,3 +209,4 @@ if __name__ == "__main__":
 
     capacities.to_csv(snakemake.output.capacities)
     sources.to_csv(snakemake.output.sources)
+    scheduled_exchanges(data, snapshots).to_csv(snakemake.output.exchanges)

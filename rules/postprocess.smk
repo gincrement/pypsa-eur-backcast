@@ -2,6 +2,28 @@
 #
 # SPDX-License-Identifier: MIT
 
+BACKCAST_PRICE_FIGURES = [
+    "price_weeks",
+    "price_daily_year",
+    "price_duration",
+    "price_profiles",
+    "price_density",
+    "price_scorecard",
+    "bias_heatmap",
+    "error_map",
+    "price_error_by_level",
+    "price_error_by_hour",
+]
+BACKCAST_SYSTEM_FIGURES = [
+    "generation_annual",
+    "generation_monthly",
+    "generation_error",
+    "price_correlation",
+    "price_spreads",
+    "exchanges",
+    "dispatch_weeks",
+]
+
 if config["foresight"] != "perfect":
 
     rule plot_base_network:
@@ -209,11 +231,20 @@ rule make_summary:
         scripts("make_summary.py")
 
 
+def backcast_figure_files(names: list[str]) -> list[str]:
+    return expand(
+        RESULTS + "backcast/figures/{figure}.{ext}", figure=names, ext=["pdf", "png"]
+    )
+
+
+def backcast_network(w) -> str:
+    return RESULTS + f"networks/solved_{config_provider('planning_horizons')(w)[-1]}.nc"
+
+
 rule evaluate_price_backcast:
     """Evaluates modelled against observed hourly day-ahead prices per bus."""
     input:
-        network=lambda w: RESULTS
-        + f"networks/solved_{config_provider('planning_horizons')(w)[-1]}.nc",
+        network=backcast_network,
         prices=resources("day_ahead_prices.csv"),
     output:
         metrics=RESULTS + "backcast/price_metrics.csv",
@@ -228,6 +259,60 @@ rule evaluate_price_backcast:
         mem_mb=4000,
     script:
         scripts("evaluate_price_backcast.py")
+
+
+rule plot_backcast_prices:
+    """Plots the benchmark figures of the modelled against the observed day-ahead prices."""
+    input:
+        network=backcast_network,
+        prices=resources("day_ahead_prices.csv"),
+        monthly_bias=RESULTS + "backcast/price_monthly_bias.csv",
+        metrics=RESULTS + "backcast/price_metrics.csv",
+        regions=resources("onshore_regions.geojson"),
+        area_to_bus=config_provider("backcast", "area_to_bus"),
+        rc="matplotlibrc",
+    output:
+        backcast_figure_files(BACKCAST_PRICE_FIGURES),
+    log:
+        RESULTS + "logs/plot_backcast_prices.log",
+    benchmark:
+        RESULTS + "benchmarks/plot_backcast_prices"
+    threads: 1
+    resources:
+        mem_mb=4000,
+    script:
+        scripts("plot_backcast_prices.py")
+
+
+rule plot_backcast_system:
+    """Plots the benchmark figures of the modelled against the observed generation, exchanges and price coupling."""
+    input:
+        network=backcast_network,
+        prices=resources("day_ahead_prices.csv"),
+        area_to_bus=config_provider("backcast", "area_to_bus"),
+        generation=resources("entsoe_generation_monthly.csv"),
+        generation_hourly=resources("entsoe_generation_hourly.csv"),
+        exchanges=resources("scheduled_exchanges.csv"),
+        rc="matplotlibrc",
+    output:
+        backcast_figure_files(BACKCAST_SYSTEM_FIGURES),
+    log:
+        RESULTS + "logs/plot_backcast_system.log",
+    benchmark:
+        RESULTS + "benchmarks/plot_backcast_system"
+    threads: 1
+    resources:
+        mem_mb=4000,
+    params:
+        tech_colors=config_provider("plotting", "tech_colors"),
+    script:
+        scripts("plot_backcast_system.py")
+
+
+rule backcast_figures:
+    """Collects the benchmark figures of the day-ahead price backcast."""
+    input:
+        backcast_figure_files(BACKCAST_PRICE_FIGURES + BACKCAST_SYSTEM_FIGURES),
 
 
 rule plot_summary:

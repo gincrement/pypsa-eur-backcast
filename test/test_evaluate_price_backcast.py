@@ -77,6 +77,15 @@ def test_align_prices_fails(model, observed, transform, match):
             "std_ratio",
             {"DE00": np.std([12, 18, 0, 0]) / np.std([10, 20, 0, -10]), "FR00": 2.0},
         ),
+        ("mean_observed", {"DE00": 5.0, "FR00": 8 / 3}),
+        ("mean_model", {"DE00": 7.5, "FR00": 16 / 3}),
+        (
+            "std_observed",
+            {
+                "DE00": np.std([10, 20, 0, -10], ddof=1),
+                "FR00": np.std([1, 3, 4], ddof=1),
+            },
+        ),
         ("zero_share_model", {"DE00": 0.5, "FR00": 0.0}),
         ("zero_share_observed", {"DE00": 0.25, "FR00": 0.0}),
         ("negative_share_model", {"DE00": 0.0, "FR00": 0.0}),

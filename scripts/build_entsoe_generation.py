@@ -2,14 +2,15 @@
 #
 # SPDX-License-Identifier: MIT
 """
-Builds the monthly actual generation per ENTSO-E bidding zone area and model carrier.
+Builds the hourly and monthly actual generation per ENTSO-E bidding zone area and model carrier.
 
 The ENTSO-E production types are mapped to model carriers with
 ``PRODUCTION_TYPE_CARRIERS``, unmapped types are dropped. The generation is
 resampled to hourly means in UTC and restricted to the snapshots. Per area,
 carrier and calendar month, the output holds the generation in MWh summed over
 the hours with data and the number of these hours. Months without any data are
-omitted. Areas in ``backcast: exclude_generation_areas`` are not read. The output
+omitted. The hourly generation in MW with area and carrier columns is written
+as second output. Areas in ``backcast: exclude_generation_areas`` are not read. The output
 is used by the backcast calibration in ``compose_network``
 (``backcast: calibrate_wind`` and ``backcast: monthly_nuclear_availability``).
 """
@@ -50,23 +51,25 @@ def hourly_carrier_generation(generation: pd.DataFrame) -> pd.DataFrame:
     return by_carrier.tz_convert("UTC").tz_localize(None).resample("h").mean()
 
 
-def monthly_generation(
+def hourly_generation(
     hourly: dict[str, pd.DataFrame], snapshots: pd.DatetimeIndex
 ) -> pd.DataFrame:
-    """Sum hourly generation per area within the snapshots to monthly energy in MWh with the number of hours with data, omitting months without data."""
-    stacked = (
-        pd.concat(
-            {area: df.reindex(snapshots) for area, df in hourly.items()},
-            names=["area", "snapshot"],
-        )
-        .rename_axis(columns="carrier")
-        .stack()
-        .reset_index()
-    )
-    stacked["month"] = stacked.snapshot.dt.to_period("M").dt.to_timestamp()
+    """Combine the hourly generation per area within the snapshots to one table with area and carrier columns in MW."""
+    return pd.concat(
+        {area: df.reindex(snapshots) for area, df in hourly.items()},
+        axis=1,
+        names=["area", "carrier"],
+    ).rename_axis("snapshot")
+
+
+def monthly_generation(hourly: pd.DataFrame) -> pd.DataFrame:
+    """Sum hourly generation to monthly energy in MWh per area and carrier with the number of hours with data, omitting months without data."""
+    grouped = hourly.groupby(hourly.index.to_period("M").to_timestamp().rename("month"))
+    stats = pd.concat({"generation": grouped.sum(), "hours": grouped.count()}, axis=1)
     return (
-        stacked.groupby(["area", "carrier", "month"])[0]
-        .agg(generation="sum", hours="count")
+        stats.stack(["area", "carrier"], future_stack=True)
+        .reorder_levels(["area", "carrier", "month"])
+        .sort_index()
         .astype({"hours": int})
         .query("hours > 0")
     )
@@ -97,6 +100,9 @@ if __name__ == "__main__":
         f"Empty actual generation files for {empty}. Add the areas to backcast: "
         "exclude_generation_areas and delete the files."
     )
-    hourly = {area: hourly_carrier_generation(df) for area, df in raw.items()}
+    hourly = hourly_generation(
+        {area: hourly_carrier_generation(df) for area, df in raw.items()}, snapshots
+    )
 
-    monthly_generation(hourly, snapshots).to_csv(snakemake.output.csv)
+    hourly.to_csv(snakemake.output.hourly)
+    monthly_generation(hourly).to_csv(snakemake.output.csv)

@@ -13,6 +13,7 @@ from pydantic import ValidationError
 
 from scripts.build_entsoe_generation import (
     hourly_carrier_generation,
+    hourly_generation,
     monthly_generation,
 )
 from scripts.lib.backcast_calibration import apply_monthly_availability, calibrate_wind
@@ -104,7 +105,7 @@ def test_monthly_generation_sums_within_snapshots():
         },
         index=pd.date_range("2023-01-31 21:00", periods=5, freq="h"),
     )
-    result = monthly_generation({"ES": hourly}, SNAPSHOTS)
+    result = monthly_generation(hourly_generation({"ES": hourly}, SNAPSHOTS))
     expected = frame(
         {
             ("ES", "nuclear", "2023-01-01"): (2.0, 1),

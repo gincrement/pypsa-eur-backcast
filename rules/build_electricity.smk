@@ -542,11 +542,12 @@ def input_actual_generation(w) -> dict[str, list[str]]:
 
 
 rule build_entsoe_generation:
-    """Builds the monthly actual generation per ENTSO-E bidding zone area and model carrier."""
+    """Builds the hourly and monthly actual generation per ENTSO-E bidding zone area and model carrier."""
     input:
         unpack(input_actual_generation),
     output:
         csv=resources("entsoe_generation_monthly.csv"),
+        hourly=resources("entsoe_generation_hourly.csv"),
     log:
         logs("build_entsoe_generation.log"),
     benchmark:
@@ -571,6 +572,7 @@ rule build_cross_border_capacities:
     output:
         capacities=resources("cross_border_capacities.csv"),
         sources=resources("cross_border_capacities_sources.csv"),
+        exchanges=resources("scheduled_exchanges.csv"),
     log:
         logs("build_cross_border_capacities.log"),
     benchmark:

@@ -12,6 +12,7 @@ from scripts.build_cross_border_capacities import (
     area_capacities,
     border_shares,
     build_capacities,
+    scheduled_exchanges,
 )
 from scripts.lib.cross_border import (
     apply_cross_border_capacities,
@@ -369,3 +370,26 @@ def test_raise_to_physical_weights_lines_and_dc_links(
         AREAS,
     )
     np.testing.assert_allclose(raised.values, expected)
+
+
+@pytest.mark.parametrize(
+    "exchange, expected",
+    [
+        ([1.0, 2, 3, 4], [1.0, 2, 3, 4]),
+        ([np.nan, 2, np.nan, 4], [np.nan, 2, np.nan, 4]),
+    ],
+)
+def test_scheduled_exchanges(exchange, expected):
+    data = pd.concat(
+        [
+            retrieved("DE_LU", "FR", scheduled_exchange=exchange),
+            retrieved("FR", "DE_LU"),
+        ]
+    )
+    result = scheduled_exchanges(
+        data, SNAPSHOTS.append(SNAPSHOTS[-1:] + pd.Timedelta("1h"))
+    )
+
+    assert result.columns.tolist() == ["DE_LU->FR", "FR->DE_LU"]
+    np.testing.assert_array_equal(result["DE_LU->FR"], [*expected, np.nan])
+    np.testing.assert_array_equal(result["FR->DE_LU"], [0.0, 0, 0, 0, np.nan])

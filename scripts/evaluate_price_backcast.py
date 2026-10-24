@@ -10,10 +10,11 @@ network, the observed prices are built by
 hours for the buses with observed prices, skipping hours without observed
 price. The per-bus metrics are the mean bias, mean absolute error, root mean
 squared error, root mean squared error of prices clipped to
-``CLIP_PRICE_RANGE``, Pearson correlation, ratio of standard deviations and
-the shares of zero and negative price hours. The monthly mean bias is written
-as separate table. Monthly means, price duration curves, average daily
-profiles and hourly scatter plots are written to one multi-page PDF.
+``CLIP_PRICE_RANGE``, Pearson correlation, ratio of standard deviations, the
+observed and modelled mean prices, the observed standard deviation and the
+shares of zero and negative price hours. The monthly mean bias is written as
+separate table. Monthly means, price duration curves, average daily profiles
+and hourly scatter plots are written to one multi-page PDF.
 """
 
 import logging
@@ -75,6 +76,9 @@ def price_metrics(model: pd.DataFrame, observed: pd.DataFrame) -> pd.DataFrame:
         ),
         "pearson_r": model.corrwith(observed),
         "std_ratio": model.std() / observed.std(),
+        "mean_observed": observed.mean(),
+        "mean_model": model.mean(),
+        "std_observed": observed.std(),
     }
     for name, prices in {"model": model, "observed": observed}.items():
         metrics[f"zero_share_{name}"] = share(
