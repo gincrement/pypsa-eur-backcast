@@ -200,7 +200,17 @@ validate-config = "pytest test/test_config_schema.py::test_config_file_is_valid 
 [feature.test.dependencies]
 pytest = ">=8.4.2"
 
+[feature.dashboard.tasks]
+backcast-extract = { cmd = "python -m dashboard.extract {{ run }}", args = ["run"] }
+backcast-dashboard = { cmd = "streamlit run dashboard/app.py", env = { PYTHONPATH = "." } }
+
+[feature.dashboard.dependencies]
+streamlit = ">=1.40"
+plotly = ">=7.1.0"
+pyarrow = ">=24.0.0"
+
 [environments]
 doc = { features = ["doc"], no-default-feature = true }
 test = ["test", "dev"]
 dev = ["dev"]
+dashboard = { features = ["dashboard", "test"], solve-group = "dashboard" }
