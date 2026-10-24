@@ -8,9 +8,10 @@ Backcast configuration.
 See docs in https://pypsa-eur.readthedocs.io/en/latest/configuration/#backcast_cf
 """
 
+import datetime
 from typing import Annotated, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, PositiveFloat, field_validator
 
 from scripts.lib.validation.config._base import ConfigModel
 
@@ -24,13 +25,15 @@ class HybridCapacitiesConfig(ConfigModel):
 
     enable: bool = Field(
         False,
-        description="Raise the hourly capacity of border directions whose source is in `sources` and that touch one of the `areas` to at least `physical_factor` times the thermal capacity (`s_nom * s_max_pu` of lines, `p_nom * p_max_pu` of DC links) of the branches between the two buses, e.g. for the monthly maximum of scheduled exchanges in the flow-based Core region, which underestimates the available capacity.",
+        description="Raise the hourly capacity of border directions whose source is in `sources` and that touch one of the `areas` to at least `physical_factor` times the physical capacity (`s_nom` of lines, `p_nom` of DC links, as with `fixed_border_capacities: physical`) of the branches between the two buses, e.g. for the monthly maximum of scheduled exchanges in the flow-based Core region, which underestimates the available capacity. Requires `electricity: cross_border_capacities: ntc`.",
     )
     physical_factor: Annotated[float, Field(gt=0)] = Field(
         0.7,
-        description="Share of the thermal capacity used as lower bound of the capacity.",
+        description="Share of the physical capacity used as lower bound of the capacity.",
     )
-    sources: list[Literal["ntc", "scheduled_exchange"]] = Field(
+    sources: Annotated[
+        list[Literal["ntc", "scheduled_exchange"]], Field(min_length=1)
+    ] = Field(
         default_factory=lambda: ["scheduled_exchange"],
         description="Capacity sources of `build_cross_border_capacities` that are raised. The offered capacities of the Nordic and Baltic borders are never raised.",
     )
@@ -90,7 +93,17 @@ class BackcastConfig(ConfigModel):
 
     calibrate_wind: bool = Field(
         False,
-        description="Scale the onshore and offshore wind availability (`p_max_pu`) per ENTSO-E area in `data/entsoe_area_to_bus.csv` so that the available energy matches the actual generation reported by the ENTSO-E Transparency Platform plus `wind_curtailment_twh`. Only months with actual generation of the carrier are compared. One factor per area and carrier, `p_max_pu` is clipped at 1. Generators of areas without actual generation of their carrier keep their availability. Requires `foresight: overnight`.",
+        description="Scale the onshore and offshore wind availability (`p_max_pu`) per ENTSO-E area in `data/entsoe_area_to_bus.csv` so that the available energy matches the actual generation reported by the ENTSO-E Transparency Platform plus `wind_curtailment_twh`. Only months with actual generation of the carrier are compared. One factor per area and carrier, `p_max_pu` is clipped at 1. Generators of areas without actual generation of their carrier or excluded in `wind_calibration_exclude` keep their availability. Requires `foresight: overnight`.",
+    )
+    wind_calibration_exclude: dict[str, list[Literal["onwind", "offwind"]]] = Field(
+        default_factory=dict,
+        description="Wind carriers per ENTSO-E area whose availability is not calibrated with `calibrate_wind`, e.g. `NL: [onwind]`, whose reported onshore wind generation covers only part of the fleet. Wind curtailment cannot be given for these areas.",
+    )
+    wind_calibration_factor_bounds: Annotated[
+        list[PositiveFloat], Field(min_length=2, max_length=2)
+    ] = Field(
+        default_factory=lambda: [0.5, 2.0],
+        description="Lower and upper bound of the wind calibration factors of `calibrate_wind`. A factor outside the bounds raises an error naming the area and carrier, which must then be added to `wind_calibration_exclude` or the bounds widened.",
     )
     wind_curtailment_twh: dict[
         str,
@@ -102,11 +115,19 @@ class BackcastConfig(ConfigModel):
     )
     monthly_nuclear_availability: bool = Field(
         False,
-        description="Set the nuclear availability (`p_max_pu`) per ENTSO-E area in `data/entsoe_area_to_bus.csv` and month to the actual monthly capacity factor, i.e. the actual generation divided by the nuclear capacity of the area and the hours of the month, clipped to [0, 1]. Months without data count as zero, which captures outages and phase-outs during the year, e.g. the German nuclear exit in April 2023. Areas without any published generation keep their availability, areas that publish generation but no nuclear generation while having nuclear generators raise an error. Requires `foresight: overnight`.",
+        description="Set the nuclear availability (`p_max_pu`) per ENTSO-E area in `data/entsoe_area_to_bus.csv` and month to the actual monthly capacity factor, i.e. the actual generation divided by the hours with data and the nuclear capacity of the area, clipped to [0, 1]. After the last operating date in `nuclear_phase_out` the availability is zero. Every month before it must have actual generation, otherwise an error is raised. Areas in `exclude_generation_areas` keep their availability. Requires `foresight: overnight`.",
     )
     nuclear_area_map: dict[str, str] = Field(
         default_factory=dict,
         description="ENTSO-E areas whose nuclear generators are calibrated with `monthly_nuclear_availability` from the actual generation of another area, pooling their capacity, e.g. `SE_4: SE_3` as the clustered `SE04` region contains Ringhals and Oskarshamn, which report to `SE_3`.",
+    )
+    nuclear_phase_out: dict[str, str] = Field(
+        default_factory=dict,
+        description='Last operating date of the nuclear generators per ENTSO-E area with `monthly_nuclear_availability`, after which their availability is zero, given as quoted ISO date, e.g. `DE_LU: "2023-04-15"` for the German nuclear exit.',
+    )
+    exclude_generation_areas: list[str] = Field(
+        default_factory=list,
+        description="ENTSO-E areas without actual generation published on the ENTSO-E Transparency Platform for the snapshot years, e.g. `GB` after 2020. Their actual generation is not retrieved and their generators keep their availability with `calibrate_wind` and `monthly_nuclear_availability`. Other areas without published data raise an error during retrieval.",
     )
     hybrid_capacities: HybridCapacitiesConfig = Field(
         default_factory=HybridCapacitiesConfig,
@@ -125,4 +146,21 @@ class BackcastConfig(ConfigModel):
             if len(k.split("-")) != 2 or k.split("-") != sorted(k.split("-"))
         ]
         assert not invalid, f"Borders must be given as sorted `AREA0-AREA1`: {invalid}"
+        return value
+
+    @field_validator("nuclear_phase_out")
+    @classmethod
+    def check_phase_out_dates(cls, value: dict[str, str]) -> dict[str, str]:
+        """Require ISO dates like `2023-04-15`."""
+        for date in value.values():
+            datetime.date.fromisoformat(date)
+        return value
+
+    @field_validator("wind_calibration_factor_bounds")
+    @classmethod
+    def check_factor_bounds(cls, value: list[float]) -> list[float]:
+        """Require the lower bound not to exceed the upper bound."""
+        assert value[0] <= value[1], (
+            f"Wind calibration factor bounds must be ascending: {value}"
+        )
         return value

@@ -9,7 +9,7 @@ The ENTSO-E production types are mapped to model carriers with
 resampled to hourly means in UTC and restricted to the snapshots. Per area,
 carrier and calendar month, the output holds the generation in MWh summed over
 the hours with data and the number of these hours. Months without any data are
-omitted, areas without published generation are logged and omitted. The output
+omitted. Areas in ``backcast: exclude_generation_areas`` are not read. The output
 is used by the backcast calibration in ``compose_network``
 (``backcast: calibrate_wind`` and ``backcast: monthly_nuclear_availability``).
 """
@@ -93,11 +93,10 @@ if __name__ == "__main__":
         for area in snakemake.params.areas
     }
     empty = [area for area, df in raw.items() if df.empty]
-    logger.info(f"No actual generation published for {empty}.")
-    hourly = {
-        area: hourly_carrier_generation(df)
-        for area, df in raw.items()
-        if area not in empty
-    }
+    assert not empty, (
+        f"Empty actual generation files for {empty}. Add the areas to backcast: "
+        "exclude_generation_areas and delete the files."
+    )
+    hourly = {area: hourly_carrier_generation(df) for area, df in raw.items()}
 
     monthly_generation(hourly, snapshots).to_csv(snakemake.output.csv)

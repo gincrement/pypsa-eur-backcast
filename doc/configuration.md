@@ -474,7 +474,11 @@ or DC links in the bidding zone clustered network. With `calibrate_wind` or
 all modelled bidding zones in `data/entsoe_area_to_bus.csv` is retrieved from
 the ENTSO-E Transparency Platform ([build_entsoe_generation][]) and calibrates
 the wind and nuclear availability in [compose_network][]. Bidding zones without
-published generation, e.g. `GB` after 2020, keep their availability. With
+published generation, e.g. `GB` after 2020, must be listed in
+`exclude_generation_areas` and keep their availability. Wind calibration
+factors outside `wind_calibration_factor_bounds` raise an error, implausible
+carriers of an area are skipped via `wind_calibration_exclude`, e.g.
+`NL: [onwind]`. With
 `hybrid_capacities`, cross-border capacities from proxy sources are raised to a
 share of the physical transmission capacity in [compose_network][]. The rule
 [evaluate_price_backcast][] compares the modelled with the observed prices.

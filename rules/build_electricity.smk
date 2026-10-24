@@ -526,13 +526,18 @@ rule build_day_ahead_prices:
         scripts("build_day_ahead_prices.py")
 
 
+def generation_areas(w) -> list[str]:
+    exclude = config_provider("backcast", "exclude_generation_areas")(w)
+    return sorted(modelled_entsoe_areas(w) - set(exclude))
+
+
 def input_actual_generation(w) -> dict[str, list[str]]:
     return {
         area: expand(
             f"{ENTSOE_GENERATION_DATA['folder']}/actual_generation_{area}_{{year}}.csv",
             year=snapshot_years(w),
         )
-        for area in modelled_entsoe_areas(w)
+        for area in generation_areas(w)
     }
 
 
@@ -552,7 +557,7 @@ rule build_entsoe_generation:
     params:
         snapshots=config_provider("snapshots"),
         drop_leap_day=config_provider("enable", "drop_leap_day"),
-        areas=lambda w: sorted(modelled_entsoe_areas(w)),
+        areas=generation_areas,
     script:
         scripts("build_entsoe_generation.py")
 

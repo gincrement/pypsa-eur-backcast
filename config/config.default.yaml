@@ -547,9 +547,15 @@ backcast:
   fixed_border_capacities: {}
   exchange_proxy_borders: []
   calibrate_wind: false
+  wind_calibration_exclude: {}
+  wind_calibration_factor_bounds:
+  - 0.5
+  - 2.0
   wind_curtailment_twh: {}
   monthly_nuclear_availability: false
   nuclear_area_map: {}
+  nuclear_phase_out: {}
+  exclude_generation_areas: []
   hybrid_capacities:
     enable: false
     physical_factor: 0.7

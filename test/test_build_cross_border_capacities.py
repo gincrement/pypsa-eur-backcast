@@ -13,7 +13,11 @@ from scripts.build_cross_border_capacities import (
     border_shares,
     build_capacities,
 )
-from scripts.lib.cross_border import apply_cross_border_capacities, inter_zone_branches
+from scripts.lib.cross_border import (
+    apply_cross_border_capacities,
+    inter_zone_branches,
+    raise_to_physical,
+)
 
 SNAPSHOTS = pd.date_range("2023-01-31 22:00", periods=4, freq="h")
 AREA_TO_BUS = pd.Series({"DE00": "DE_LU", "LUG1": "DE_LU", "FR00": "FR"})
@@ -292,6 +296,7 @@ def test_apply_cross_border_capacities_raises_on_missing_border(network):
     ids=["raised", "other-areas", "other-source"],
 )
 def test_apply_cross_border_capacities_hybrid(network, sources, areas, expected):
+    network.lines.s_max_pu = 0.7
     capacities = pd.DataFrame(
         {"DE00->FR00": 100.0, "FR00->DE00": 50.0, "FR00->LUG1": 0.0, "LUG1->FR00": 0.0},
         index=SNAPSHOTS,
@@ -304,16 +309,11 @@ def test_apply_cross_border_capacities_hybrid(network, sources, areas, expected)
         },
         index=capacities.columns,
     )
-    hybrid = {
-        "enable": True,
-        "physical_factor": 0.5,
-        "sources": sources,
-        "areas": areas,
-    }
-
-    apply_cross_border_capacities(
-        network, capacities, AREA_TO_BUS, border_sources, hybrid
+    area_to_bus = pd.concat([AREA_TO_BUS, pd.Series({"PL00": "PL"})])
+    raised = raise_to_physical(
+        network, capacities, area_to_bus, border_sources, 0.5, sources, areas
     )
+    apply_cross_border_capacities(network, raised, AREA_TO_BUS)
 
     links = network.links
     p_max = network.links_t.p_max_pu.mul(links.p_nom).iloc[0]
@@ -326,3 +326,10 @@ def test_apply_cross_border_capacities_hybrid(network, sources, areas, expected)
     }
     for name, value in expected.items():
         assert result[name] == pytest.approx(value)
+
+
+def test_raise_to_physical_fails_on_unknown_area(network):
+    with pytest.raises(AssertionError, match="Unknown ENTSO-E areas"):
+        raise_to_physical(
+            network, pd.DataFrame(), AREA_TO_BUS, pd.DataFrame(), 0.5, ["ntc"], ["XX"]
+        )

@@ -8,14 +8,13 @@ The generation is queried through the ENTSO-E API for the calendar year in UTC
 and stored in its native market time unit with UTC timestamps. Only the
 aggregated generation is kept, the consumption of e.g. pumped storage is
 dropped. An API token must be set in the environment variable
-``ENTSOE_API_TOKEN``. If no data is published for the area and year, e.g. for
-``GB`` after 2020, an empty file is written and the area is not calibrated.
+``ENTSOE_API_TOKEN``. Areas without published data, e.g. ``GB`` after 2020,
+raise an error and must be listed in ``backcast: exclude_generation_areas``.
 """
 
 import logging
 
 import pandas as pd
-from entsoe.exceptions import NoMatchingDataError
 
 from scripts._helpers import configure_logging, set_scenario_config
 from scripts.lib.entsoe import entsoe_client, utc_year
@@ -48,11 +47,5 @@ if __name__ == "__main__":
 
     logger.info(f"Querying actual generation for {area} in {year}...")
 
-    try:
-        generation = entsoe_client().query_generation(area, start=start, end=end)
-        generation = aggregated_generation(generation, end)
-    except NoMatchingDataError:
-        logger.warning(f"No actual generation published for {area} in {year}.")
-        generation = pd.DataFrame(index=pd.Index([], name="utc_timestamp"))
-
-    generation.to_csv(snakemake.output.csv)
+    generation = entsoe_client().query_generation(area, start=start, end=end)
+    aggregated_generation(generation, end).to_csv(snakemake.output.csv)

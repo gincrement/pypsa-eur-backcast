@@ -264,3 +264,14 @@ class ConfigSchema(BaseModel):
             "backcast: calibrate_wind and monthly_nuclear_availability require foresight: overnight."
         )
         return self
+
+    @model_validator(mode="after")
+    def check_hybrid_capacities_ntc(self) -> "ConfigSchema":
+        """Require ENTSO-E cross-border capacities for the hybrid capacities."""
+        assert (
+            self.electricity.cross_border_capacities == "ntc"
+            or not self.backcast.hybrid_capacities.enable
+        ), (
+            "backcast: hybrid_capacities requires electricity: cross_border_capacities: ntc."
+        )
+        return self

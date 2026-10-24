@@ -24,6 +24,7 @@ import logging
 
 import pandas as pd
 import pypsa
+from snakemake.iocontainers import InputFiles
 
 from scripts._helpers import (
     configure_logging,
@@ -44,7 +45,7 @@ from scripts.lib.backcast_calibration import (
     calibrate_wind,
     read_generation,
 )
-from scripts.lib.cross_border import apply_cross_border_capacities
+from scripts.lib.cross_border import apply_cross_border_capacities, raise_to_physical
 from scripts.lib.entsoe import read_area_to_bus
 from scripts.prepare_network import (
     apply_co2_budget_constraints,
@@ -61,6 +62,54 @@ from scripts.prepare_sector_network import (
 logger = logging.getLogger(__name__)
 
 SECTOR_RENEWABLE_CARRIERS = {"solar rooftop"}
+
+
+def apply_backcast(
+    n: pypsa.Network, inputs: InputFiles, electricity: dict, backcast: dict
+) -> None:
+    """Apply the ENTSO-E cross-border capacities and the backcast calibration."""
+    ntc = electricity["cross_border_capacities"] == "ntc"
+    wind = backcast["calibrate_wind"]
+    nuclear = backcast["monthly_nuclear_availability"]
+    if not (ntc or wind or nuclear):
+        return
+    area_to_bus = read_area_to_bus(inputs.area_to_bus)
+    if ntc:
+        capacities = pd.read_csv(
+            inputs.cross_border_capacities, index_col=0, parse_dates=True
+        )
+        hybrid = backcast["hybrid_capacities"]
+        if hybrid["enable"]:
+            capacities = raise_to_physical(
+                n,
+                capacities,
+                area_to_bus,
+                pd.read_csv(inputs.cross_border_capacities_sources, index_col=0),
+                hybrid["physical_factor"],
+                hybrid["sources"],
+                hybrid["areas"],
+            )
+        apply_cross_border_capacities(n, capacities, area_to_bus)
+    if wind or nuclear:
+        generation = read_generation(inputs.entsoe_generation)
+    if wind:
+        calibrate_wind(
+            n,
+            generation,
+            area_to_bus,
+            backcast["wind_curtailment_twh"],
+            backcast["wind_calibration_exclude"],
+            backcast["wind_calibration_factor_bounds"],
+        )
+    if nuclear:
+        apply_monthly_availability(
+            n,
+            generation,
+            area_to_bus,
+            "nuclear",
+            backcast["nuclear_area_map"],
+            backcast["nuclear_phase_out"],
+        )
 
 
 if __name__ == "__main__":
@@ -102,31 +151,7 @@ if __name__ == "__main__":
 
     add_electricity_components(n, inputs, params, costs)
 
-    if params.electricity["cross_border_capacities"] == "ntc":
-        apply_cross_border_capacities(
-            n,
-            pd.read_csv(inputs.cross_border_capacities, index_col=0, parse_dates=True),
-            read_area_to_bus(inputs.area_to_bus),
-            pd.read_csv(inputs.cross_border_capacities_sources, index_col=0),
-            params.backcast["hybrid_capacities"],
-        )
-
-    if params.backcast["calibrate_wind"]:
-        calibrate_wind(
-            n,
-            read_generation(inputs.entsoe_generation),
-            read_area_to_bus(inputs.area_to_bus),
-            params.backcast["wind_curtailment_twh"],
-        )
-
-    if params.backcast["monthly_nuclear_availability"]:
-        apply_monthly_availability(
-            n,
-            read_generation(inputs.entsoe_generation),
-            read_area_to_bus(inputs.area_to_bus),
-            "nuclear",
-            params.backcast["nuclear_area_map"],
-        )
+    apply_backcast(n, inputs, params.electricity, params.backcast)
 
     if sector_mode:
         add_sector_components(n, inputs, params, costs, nyears, current_horizon)

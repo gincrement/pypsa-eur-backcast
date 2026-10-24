@@ -6,6 +6,7 @@ Shared helpers for querying the ENTSO-E Transparency Platform and mapping its bi
 """
 
 import os
+from collections.abc import Iterable
 
 import pandas as pd
 from entsoe import EntsoePandasClient
@@ -35,3 +36,9 @@ def to_utc(series: pd.Series, end: pd.Timestamp, name: str) -> pd.Series:
 def read_area_to_bus(path: str) -> pd.Series:
     """Read the many-to-one map from model buses to ENTSO-E bidding zone areas."""
     return pd.read_csv(path, index_col="bus")["entsoe_area"]
+
+
+def assert_known_areas(areas: Iterable[str], area_to_bus: pd.Series, key: str) -> None:
+    """Assert that the configured `areas` of `key` are ENTSO-E areas of the bus map."""
+    unknown = sorted(set(areas) - set(area_to_bus))
+    assert not unknown, f"Unknown ENTSO-E areas in {key}: {unknown}"

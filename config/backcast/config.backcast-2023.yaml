@@ -98,9 +98,32 @@ backcast:
     FR-IT_CNOR: physical
     FR-IT_SARD: physical
   exchange_proxy_borders: [BE-NL, DE_LU-NL]
+  exclude_generation_areas: [AL, GB]
   calibrate_wind: true
+  wind_calibration_exclude:
+    BA: [onwind]
+    CH: [onwind]
+    DK_2: [onwind]
+    ES: [offwind]
+    FR: [offwind]
+    HR: [onwind]
+    IT_CALA: [onwind]
+    IT_CNOR: [onwind]
+    IT_CSUD: [onwind]
+    IT_NORD: [onwind]
+    IT_SICI: [onwind]
+    IT_SUD: [onwind, offwind]
+    ME: [onwind]
+    MK: [onwind]
+    NL: [onwind]
+    NO_2: [onwind]
+    NO_3: [onwind]
+    SI: [onwind]
+    XK: [onwind]
   wind_curtailment_twh:
     DE_LU: {onwind: 6, offwind: 4}
   monthly_nuclear_availability: true
   nuclear_area_map:
     SE_4: SE_3
+  nuclear_phase_out:
+    DE_LU: "2023-04-15"
