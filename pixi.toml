@@ -208,6 +208,7 @@ backcast-dashboard = { cmd = "streamlit run dashboard/app.py", env = { PYTHONPAT
 streamlit = ">=1.40"
 plotly = ">=7.1.0"
 pyarrow = ">=24.0.0"
+playwright-python = ">=1.64.0"
 
 [environments]
 doc = { features = ["doc"], no-default-feature = true }

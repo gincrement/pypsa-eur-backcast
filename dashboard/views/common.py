@@ -33,6 +33,19 @@ MARKER_COLORS = {"negative price": "#CC79A7", "load shedding": WORSE_COLOR}
 
 
 @dataclass(frozen=True)
+class Reference:
+    """Validation run of another year over the comparable period."""
+
+    run: RunData
+    hours: pd.DatetimeIndex
+    period: str
+
+    def bus_metrics(self) -> pd.DataFrame:
+        """Bus metrics of the run in the period."""
+        return bus_metrics(self.run.model, self.run.observed, self.hours)
+
+
+@dataclass(frozen=True)
 class Context:
     """Run A, the optional comparison and the sidebar selection."""
 
@@ -43,7 +56,7 @@ class Context:
     period: str
     aggregation: str
     colors: dict[str, str]
-    references: list[RunData]
+    references: list[Reference]
 
     @property
     def bus(self) -> str:
@@ -63,6 +76,15 @@ class Context:
             self.run.area_model.loc[self.hours], self.run.area_observed.loc[self.hours]
         )
 
+    def bus_metrics(self) -> pd.DataFrame:
+        """Bus metrics of run A in the period, as in the evaluation rule."""
+        return bus_metrics(self.run.model, self.run.observed, self.hours)
+
+    def compare_bus_metrics(self) -> pd.DataFrame:
+        """Bus metrics of a same-year comparison in the period."""
+        assert self.same_year
+        return bus_metrics(self.compare.model, self.run.observed, self.hours)
+
     def compare_metrics(self) -> pd.DataFrame:
         """Area metrics of the comparison in the period, or over its own year if it covers another year."""
         assert self.compare is not None
@@ -72,6 +94,13 @@ class Context:
         return area_metrics(
             model.loc[self.hours], self.run.area_observed.loc[self.hours]
         )
+
+
+def bus_metrics(
+    model: pd.DataFrame, observed: pd.DataFrame, hours: pd.DatetimeIndex
+) -> pd.DataFrame:
+    """Price metrics per bus in the hours."""
+    return area_metrics(model.loc[hours], observed.loc[hours]).rename_axis("bus")
 
 
 def full_year(run: RunData) -> pd.DataFrame:
@@ -91,12 +120,17 @@ def worst(values: pd.Series, n: int = 3, signed: bool = False) -> str:
     return ", ".join(f"{a} ({template.format(values[a])})" for a in top)
 
 
+def zone_height(rows: int) -> int:
+    """Height of a per-area figure with one row per area."""
+    return ROW_HEIGHT * rows + 110
+
+
 def zone_layout(fig: go.Figure, areas: list[str]) -> go.Figure:
     """Order a horizontal per-area figure by zone with group separators and row-based height."""
     for y in group_breaks(areas):
         fig.add_hline(y=y, line_width=0.6, line_color="grey")
     fig.update_yaxes(autorange="reversed", type="category")
-    fig.update_layout(height=ROW_HEIGHT * len(areas) + 110, margin=dict(t=50, b=30))
+    fig.update_layout(height=zone_height(len(areas)), margin=dict(t=50, b=30))
     return fig
 
 

@@ -14,10 +14,10 @@ from dashboard.data import KPIS, kpis
 from dashboard.state import follow_selection
 from dashboard.views.common import (
     Context,
-    full_year,
     show,
     takeaway,
     worst,
+    zone_height,
     zone_layout,
 )
 from scripts.evaluate_price_backcast import price_metrics
@@ -79,22 +79,23 @@ def kpi_row(label: str, metrics: pd.DataFrame, reference: pd.DataFrame | None) -
         )
 
 
-def lead(ctx: Context, metrics: pd.DataFrame) -> str:
-    """Summarise the quality of run A, the validation years and the worst zones."""
-    values = kpis(metrics)
-    text = (
-        f"Across **{len(metrics)} bidding zones** ({ctx.period}), the median MAE is "
-        f"**{values['median MAE (€/MWh)']:.1f} €/MWh**, "
-        f"{values['median MAE / mean price']:.0%} of the mean observed price, "
-        f"with median Pearson r **{values['median Pearson r']:.2f}**."
+def summary(values: dict[str, float]) -> str:
+    """Headline numbers as a sentence fragment."""
+    return (
+        f"MAE **{values['median MAE (€/MWh)']:.2f} €/MWh** "
+        f"({values['median MAE / mean price']:.0%} of the mean price), "
+        f"r **{values['median Pearson r']:.2f}**, |bias| {values['median |bias| (€/MWh)']:.2f} €/MWh"
     )
-    for run in ctx.references:
-        other = kpis(full_year(run))
-        text += (
-            f" In the validation year {run.year} the median MAE is "
-            f"{other['median MAE (€/MWh)']:.1f} €/MWh "
-            f"({other['median MAE / mean price']:.0%}) and r {other['median Pearson r']:.2f}."
-        )
+
+
+def lead(ctx: Context, buses: pd.DataFrame, metrics: pd.DataFrame) -> str:
+    """Summarise the quality of run A, the validation runs over the comparable period and the worst zones."""
+    text = (
+        f"Median over **{len(buses)} model buses** ({len(metrics)} bidding zones), "
+        f"{ctx.period}: {summary(kpis(buses))}."
+    )
+    for ref in ctx.references:
+        text += f" Validation, {ref.period}: {summary(kpis(ref.bus_metrics()))}."
     return (
         f"{text}\n\nLargest MAE: {worst(metrics.mae)} €/MWh. "
         f"Largest bias: {worst(metrics.mean_bias, signed=True)} €/MWh. "
@@ -103,7 +104,7 @@ def lead(ctx: Context, metrics: pd.DataFrame) -> str:
     )
 
 
-def zone_map(ctx: Context, column: str) -> go.Figure:
+def zone_map(ctx: Context, column: str, height: int) -> go.Figure:
     """Choropleth of a bus metric over the bus regions, carrying the area of each bus."""
     values = price_metrics(
         ctx.run.model.loc[ctx.hours], ctx.run.observed.loc[ctx.hours]
@@ -123,13 +124,18 @@ def zone_map(ctx: Context, column: str) -> go.Figure:
             customdata=ctx.run.area_to_bus[values.index].to_numpy(),
             hovertemplate="%{customdata} (%{location}): %{z:.2f}<extra></extra>",
             marker_line_width=0.3,
-            colorbar=dict(thickness=12, len=0.6),
+            colorbar=dict(orientation="h", thickness=10, len=0.7, y=0, yanchor="top"),
             **scale,
         )
     )
-    fig.update_geos(fitbounds="locations", visible=False, projection_type="mercator")
+    fig.update_geos(
+        visible=False,
+        projection_type="mercator",
+        lonaxis_range=[-10.5, 31.5],
+        lataxis_range=[35.5, 71],
+    )
     fig.update_layout(
-        height=700, margin=dict(l=0, r=0, t=0, b=0), clickmode="event+select"
+        height=height, margin=dict(l=0, r=0, t=0, b=40), clickmode="event+select"
     )
     return fig
 
@@ -198,19 +204,25 @@ def bars(metrics: pd.DataFrame, second: pd.DataFrame | None, label: str) -> go.F
 def render(ctx: Context) -> None:
     """Draw the overview page, a click on a zone selects it for the detail pages."""
     metrics = ctx.metrics()
+    buses = ctx.bus_metrics()
     second = None if ctx.compare is None else ctx.compare_metrics()
-    takeaway(lead(ctx, metrics))
+    takeaway(lead(ctx, buses, metrics))
+    st.caption("Headline numbers: median over model buses, as in price_metrics.csv.")
     kpi_row(
-        f"{ctx.run.name} ({ctx.period})", metrics, second if ctx.same_year else None
+        f"{ctx.run.name}, {ctx.period}",
+        buses,
+        ctx.compare_bus_metrics() if ctx.same_year else None,
     )
-    for run in ctx.references:
-        kpi_row(f"validation {run.name}", full_year(run), None)
-    left, right = st.columns([2, 3])
+    for ref in ctx.references:
+        kpi_row(f"validation {ref.run.name}, {ref.period}", ref.bus_metrics(), None)
+    left, right = st.columns(2)
     with left:
         name = st.segmented_control(
             "Map metric", list(MAP_METRICS), default=DEFAULT_MAP, key="map_metric"
         )
-        figure = zone_map(ctx, MAP_METRICS[name or DEFAULT_MAP])
+        figure = zone_map(
+            ctx, MAP_METRICS[name or DEFAULT_MAP], zone_height(len(metrics))
+        )
         points = show(figure, "zone_map", select=True)
     with right:
         points += show(

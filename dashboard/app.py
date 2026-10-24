@@ -15,7 +15,7 @@ import yaml
 from dashboard import data
 from dashboard.state import DEFAULTS, init_state, sync_query_params
 from dashboard.views import PAGES, QUESTIONS, compare, dispatch, errors, overview, zone
-from dashboard.views.common import Context
+from dashboard.views.common import Context, Reference
 from scripts.lib.backcast_plotting import STACK, group_colors
 
 AUTO_DAILY_HOURS = 24 * 62
@@ -84,6 +84,28 @@ def resolve_aggregation(choice: str, hours: pd.DatetimeIndex) -> str:
     return "daily" if len(hours) > AUTO_DAILY_HOURS else "hourly"
 
 
+def period_hours(
+    run: data.RunData, dates: tuple[pd.Timestamp, pd.Timestamp] | None
+) -> pd.DatetimeIndex:
+    """Hours of the selected period preset in the year of a run."""
+    return data.period_index(
+        run.observed.index,
+        st.session_state.period,
+        run.weeks,
+        st.session_state.month,
+        dates,
+    )
+
+
+def reference(
+    run: data.RunData, dates: tuple[pd.Timestamp, pd.Timestamp] | None
+) -> Reference:
+    """Validation run over the same period preset, custom dates moved to its year."""
+    moved = None if dates is None else tuple(d.replace(year=run.year) for d in dates)
+    hours = period_hours(run, moved)
+    return Reference(run, hours, period_label(st.session_state.period, hours))
+
+
 def sidebar(runs: list[str]) -> Context:
     """Draw the global sidebar and return the page context."""
     bar = st.sidebar
@@ -132,13 +154,7 @@ def sidebar(runs: list[str]) -> Context:
             f"Extract is older than {len(stale)} of its sources, rerun backcast-extract"
         )
     bar.caption(f"Extract {run.manifest['created']} at commit {run.manifest['commit']}")
-    hours = data.period_index(
-        run.observed.index,
-        st.session_state.period,
-        run.weeks,
-        st.session_state.month,
-        dates,
-    )
+    hours = period_hours(run, dates)
     return Context(
         run=run,
         compare=comparison(st.session_state.run_b, run, runs),
@@ -147,7 +163,11 @@ def sidebar(runs: list[str]) -> Context:
         period=period_label(st.session_state.period, hours),
         aggregation=resolve_aggregation(st.session_state.agg or "auto", hours),
         colors=carrier_colors(),
-        references=[cached_run(r) for r in runs if cached_run(r).year != run.year],
+        references=[
+            reference(cached_run(r), dates)
+            for r in runs
+            if cached_run(r).year != run.year
+        ],
     )
 
 

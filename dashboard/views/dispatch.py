@@ -5,6 +5,7 @@
 Dispatch and flows: generation stacks, carrier energy errors, price-setting carriers, border positions and hydro.
 """
 
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -31,6 +32,22 @@ UNMATCHED = "none"
 UNMATCHED_LABEL = "no local carrier"
 
 
+def nice_step(span: float, ticks: int = 5) -> float:
+    """Round tick step that splits the span into at most about the given number of ticks."""
+    raw = span / ticks
+    magnitude = 10 ** np.floor(np.log10(raw))
+    return magnitude * min(m for m in (1, 2, 2.5, 5, 10) if m * magnitude >= raw)
+
+
+def zero_aligned(
+    top: float, low: float, high: float
+) -> tuple[list[float], list[float]]:
+    """Generation and price axis ranges sharing the zero line, padded by five percent."""
+    low, high = 1.05 * min(low, 0.0), 1.05 * max(high, 0.0)
+    share = -low / (high - low)
+    return [-share / (1 - share) * top, top], [low, high]
+
+
 def generation_stacks(ctx: Context) -> go.Figure:
     """Stacked generation of model and ENTSO-E with the price on a secondary axis."""
     fig = make_subplots(
@@ -42,6 +59,12 @@ def generation_stacks(ctx: Context) -> go.Figure:
     )
     prices = {"model": ctx.run.area_model, "entsoe": ctx.run.area_observed}
     marginal = ctx.run.marginal[ctx.bus].reindex(ctx.hours).astype(str)
+    both = pd.concat(
+        [
+            aggregate(p.loc[ctx.hours, ctx.area], ctx.aggregation)
+            for p in prices.values()
+        ]
+    )
     for row, (source, color) in enumerate(SOURCES.items(), start=1):
         stack = stacked_generation(
             source_generation(ctx.run.generation, source, ctx.area), ctx.hours
@@ -74,15 +97,28 @@ def generation_stacks(ctx: Context) -> go.Figure:
             col=1,
             secondary_y=True,
         )
-    fig.update_yaxes(title_text="GW", secondary_y=False)
-    both = pd.concat(
-        [
-            aggregate(p.loc[ctx.hours, ctx.area], ctx.aggregation)
-            for p in prices.values()
-        ]
-    )
-    span = [both.min() - 10, both.max() + 10]
-    fig.update_yaxes(title_text="€/MWh", range=span, secondary_y=True)
+        gw, price = zero_aligned(
+            max(stack.sum(axis=1).max(), 1.0), both.min(), both.max()
+        )
+        fig.update_yaxes(
+            title_text="GW",
+            range=gw,
+            tickvals=np.arange(0, gw[1], nice_step(gw[1])),
+            row=row,
+            col=1,
+            secondary_y=False,
+        )
+        fig.update_yaxes(
+            title_text="€/MWh",
+            range=price,
+            tickmode="linear",
+            tick0=0,
+            dtick=nice_step(price[1] - price[0]),
+            showgrid=False,
+            row=row,
+            col=1,
+            secondary_y=True,
+        )
     fig.update_layout(height=640, hovermode="x unified", margin=dict(t=40, b=30))
     return fig
 
