@@ -149,8 +149,6 @@ backcast:
   wind_curtailment_twh:
     DE_LU: {onwind: 6, offwind: 4}
   monthly_nuclear_availability: true
-  nuclear_area_map:
-    SE_4: SE_3
   nuclear_phase_out:
     DE_LU: "2023-04-15"
   hybrid_capacities:
