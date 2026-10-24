@@ -8,6 +8,8 @@ Renewable energy configuration.
 See docs in https://pypsa-eur.readthedocs.io/en/latest/configuration/#renewable_cf
 """
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from scripts.lib.validation.config._base import ConfigModel
@@ -271,6 +273,10 @@ class _HydroConfig(BaseModel):
     PHS_max_hours: float = Field(
         6,
         description="Maximum state of charge capacity of the pumped-hydro storage (PHS) in terms of hours at full output capacity `p_nom`. Cf. `PyPSA documentation <https://docs.pypsa.org/latest/user-guide/components/storage-units/>`_.",
+    )
+    PHS_max_hours_cap: Literal["geth2015"] | None = Field(
+        None,
+        description="Cap the state of charge capacity of pumped-hydro storage (PHS) at the country ratio of storage energy to discharge capacity. 'geth2015' uses table 25 of Geth et al. (2015), Renew. Sust. Energy Rev. 52, 1212-1227. Countries without data keep their value.",
     )
     hydro_max_hours: str | float = Field(
         "energy_capacity_totals_by_country",

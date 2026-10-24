@@ -5100,6 +5100,19 @@
               "markdownDescription": "Maximum state of charge capacity of the pumped-hydro storage (PHS) in terms of hours at full output capacity `p_nom`. Cf. [PyPSA documentation ](https://docs.pypsa.org/latest/user-guide/components/storage-units/).",
               "type": "number"
             },
+            "PHS_max_hours_cap": {
+              "anyOf": [
+                {
+                  "const": "geth2015",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Cap the state of charge capacity of pumped-hydro storage (PHS) at the country ratio of storage energy to discharge capacity. 'geth2015' uses table 25 of Geth et al. (2015), Renew. Sust. Energy Rev. 52, 1212-1227. Countries without data keep their value."
+            },
             "hydro_max_hours": {
               "anyOf": [
                 {
@@ -8598,6 +8611,19 @@
           "description": "Maximum state of charge capacity of the pumped-hydro storage (PHS) in terms of hours at full output capacity `p_nom`. Cf. `PyPSA documentation <https://docs.pypsa.org/latest/user-guide/components/storage-units/>`_.",
           "markdownDescription": "Maximum state of charge capacity of the pumped-hydro storage (PHS) in terms of hours at full output capacity `p_nom`. Cf. [PyPSA documentation ](https://docs.pypsa.org/latest/user-guide/components/storage-units/).",
           "type": "number"
+        },
+        "PHS_max_hours_cap": {
+          "anyOf": [
+            {
+              "const": "geth2015",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Cap the state of charge capacity of pumped-hydro storage (PHS) at the country ratio of storage energy to discharge capacity. 'geth2015' uses table 25 of Geth et al. (2015), Renew. Sust. Energy Rev. 52, 1212-1227. Countries without data keep their value."
         },
         "hydro_max_hours": {
           "anyOf": [
@@ -12177,6 +12203,19 @@
               "description": "Maximum state of charge capacity of the pumped-hydro storage (PHS) in terms of hours at full output capacity `p_nom`. Cf. `PyPSA documentation <https://docs.pypsa.org/latest/user-guide/components/storage-units/>`_.",
               "markdownDescription": "Maximum state of charge capacity of the pumped-hydro storage (PHS) in terms of hours at full output capacity `p_nom`. Cf. [PyPSA documentation ](https://docs.pypsa.org/latest/user-guide/components/storage-units/).",
               "type": "number"
+            },
+            "PHS_max_hours_cap": {
+              "anyOf": [
+                {
+                  "const": "geth2015",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Cap the state of charge capacity of pumped-hydro storage (PHS) at the country ratio of storage energy to discharge capacity. 'geth2015' uses table 25 of Geth et al. (2015), Renew. Sust. Energy Rev. 52, 1212-1227. Countries without data keep their value."
             },
             "hydro_max_hours": {
               "anyOf": [

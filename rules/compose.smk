@@ -47,6 +47,11 @@ def get_compose_inputs(w):
             else []
         ),
         hydro_capacities=ancient("data/hydro_capacities.csv"),
+        phs_capacities=(
+            "data/geth2015_hydro_capacities.csv"
+            if cfg["renewable"]["hydro"]["PHS_max_hours_cap"] == "geth2015"
+            else []
+        ),
         unit_commitment="data/unit_commitment.csv",
         fuel_price=(
             resources("monthly_fuel_price.csv")

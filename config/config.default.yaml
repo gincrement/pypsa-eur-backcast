@@ -409,6 +409,7 @@ renewable:
     - PHS
     - hydro
     PHS_max_hours: 6
+    PHS_max_hours_cap:
     hydro_max_hours: energy_capacity_totals_by_country
     flatten_dispatch: false
     flatten_dispatch_buffer: 0.2

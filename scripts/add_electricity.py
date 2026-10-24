@@ -753,12 +753,20 @@ def attach_existing_batteries(
     logger.info(f"Added {len(batt)} existing battery storage units\n({stats} MW)")
 
 
+def cap_phs_max_hours(max_hours: pd.Series, country: pd.Series, fn: str) -> pd.Series:
+    """Clip PHS max hours at the country ratio of storage energy to discharge capacity."""
+    capacities = pd.read_csv(fn, comment="#", na_values="-", index_col=0)
+    cap = (capacities.e_stor / capacities.p_nom_discharge).dropna()
+    return max_hours.clip(upper=country.loc[max_hours.index].map(cap))
+
+
 def attach_hydro(
     n: pypsa.Network,
     costs: pd.DataFrame,
     ppl: pd.DataFrame,
     profile_hydro: str,
     hydro_capacities: str,
+    phs_capacities: str | list,
     carriers: list,
     **params,
 ):
@@ -777,6 +785,8 @@ def attach_hydro(
         Path to the hydro profile data.
     hydro_capacities : str
         Path to the hydro capacities data.
+    phs_capacities : str | list
+        Path to the PHS capacities data used for `PHS_max_hours_cap`.
     carriers : list
         List of hydro energy carriers.
     **params :
@@ -837,6 +847,8 @@ def attach_hydro(
         # assume no natural inflow due to lack of data
         max_hours = params.get("PHS_max_hours", 6)
         phs = phs.replace({"max_hours": {0: max_hours, np.nan: max_hours}})
+        if params.get("PHS_max_hours_cap") == "geth2015":
+            phs["max_hours"] = cap_phs_max_hours(phs.max_hours, country, phs_capacities)
         n.add(
             "StorageUnit",
             phs.index,
@@ -1327,6 +1339,7 @@ def main(
             ppl,
             inputs.profile_hydro,
             inputs.hydro_capacities,
+            inputs.phs_capacities,
             carriers,
             **p,
         )

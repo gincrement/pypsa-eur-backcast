@@ -7,12 +7,14 @@
 import numpy as np
 import pandas as pd
 import pypsa
+import pytest
 import xarray as xr
 
 from scripts.add_electricity import (
     attach_load,
     attach_storageunits,
     attach_stores,
+    cap_phs_max_hours,
     estimate_efficiency,
 )
 from scripts.lib.validation.config.conventional import _EstimateEfficienciesConfig
@@ -122,3 +124,21 @@ def test_estimate_efficiency():
         np.nan,
     ]
     np.testing.assert_allclose(eta, expected)
+
+
+@pytest.mark.parametrize(
+    ("country", "max_hours", "expected"),
+    [("AT", 50.0, 20.0), ("AT", 8.0, 8.0), ("DK", 50.0, 50.0), ("FR", 50.0, 50.0)],
+)
+def test_cap_phs_max_hours(tmp_path, country, max_hours, expected):
+    """PHS max hours are capped at the country value; countries without data keep theirs."""
+    fn = tmp_path / "phs.csv"
+    fn.write_text(
+        "# source\ncountry,n,p_nom_discharge,p_nom_charge,e_stor\n"
+        "AT,1,2.0,1.5,40.0\nDK,0,-,-,-\n"
+    )
+    idx = pd.Index(["phs"])
+    capped = cap_phs_max_hours(
+        pd.Series(max_hours, idx), pd.Series(country, idx), str(fn)
+    )
+    assert capped.at["phs"] == expected

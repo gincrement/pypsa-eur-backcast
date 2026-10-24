@@ -41,6 +41,7 @@ path = [
     "data/entsoe_borders.csv",
     "data/entsoe_borders-2019.csv",
     "data/entsoegridkit/*",
+    "data/geth2015_hydro_capacities.csv",
     "data/heat_load_profile_BDEW.csv",
     "data/hydro_capacities.csv",
     "data/links_p_nom.csv",

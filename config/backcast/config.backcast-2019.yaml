@@ -36,6 +36,7 @@ renewable:
   hydro:
     flatten_dispatch: true
     flatten_dispatch_buffer: 0.2
+    PHS_max_hours_cap: geth2015
 
 conventional:
   dynamic_fuel_price: true
