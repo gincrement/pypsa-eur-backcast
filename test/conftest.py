@@ -178,3 +178,7 @@ def pytest_addoption(parser):
         metavar="CONFIGFILE",
         help="Config files to check for keys that are not part of the config schema.",
     )
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "slow: tests that start a Streamlit app")
