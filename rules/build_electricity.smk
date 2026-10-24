@@ -83,6 +83,11 @@ rule base_network:
         country_shapes=resources("country_shapes.geojson"),
         offshore_shapes=resources("offshore_shapes.geojson"),
         europe_shape=resources("europe_shape.geojson"),
+        bidding_zones=lambda w: (
+            resources("bidding_zones.geojson")
+            if config_provider("clustering", "mode")(w) == "administrative"
+            else []
+        ),
     output:
         base_network=resources("networks/base.nc"),
         onshore_regions=resources("onshore_regions_base.geojson"),
@@ -178,11 +183,6 @@ rule build_nuts3_shapes:
         nuts3_gdp=rules.retrieve_jrc_ardeco.output["ardeco_gdp"],
         nuts3_pop=rules.retrieve_jrc_ardeco.output["ardeco_pop"],
         offshore_shapes=resources("offshore_shapes.geojson"),
-        bidding_zones=lambda w: (
-            resources("bidding_zones.geojson")
-            if config_provider("clustering", "mode")(w) == "administrative"
-            else []
-        ),
         other_gdp=rules.retrieve_gdp_per_capita.output["gdp"],
         other_pop=rules.retrieve_population_count.output["tif"],
     output:

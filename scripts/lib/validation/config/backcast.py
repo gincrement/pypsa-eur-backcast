@@ -137,7 +137,7 @@ class BackcastConfig(ConfigModel):
     )
     nuclear_area_map: dict[str, str] = Field(
         default_factory=dict,
-        description="ENTSO-E areas whose nuclear generators are calibrated with `monthly_nuclear_availability` from the actual generation of another area, pooling their capacity, e.g. `SE_4: SE_3` as the clustered `SE04` region contains Ringhals and Oskarshamn, which report to `SE_3`.",
+        description="ENTSO-E areas whose nuclear generators are calibrated with `monthly_nuclear_availability` from the actual generation of another area, pooling their capacity, e.g. `SE_4: SE_3` when nuclear generators located in the clustered `SE04` region report their generation to `SE_3`.",
     )
     nuclear_phase_out: dict[str, str] = Field(
         default_factory=dict,

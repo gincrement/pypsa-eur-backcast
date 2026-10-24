@@ -9,9 +9,12 @@ Tests the functionalities of scripts/base_network.py.
 import pathlib
 import sys
 
+import geopandas as gpd
 import numpy as np
 import pandas as pd
+import pypsa
 import pytest
+from shapely.geometry import Point, box
 
 sys.path.append("./scripts")
 
@@ -31,6 +34,8 @@ from scripts.base_network import (
     _set_electrical_parameters_lines_eg,
     _set_electrical_parameters_lines_raw,
     _set_electrical_parameters_links_raw,
+    bidding_zone_shapes,
+    build_admin_shapes,
 )
 
 path_cwd = pathlib.Path.cwd()
@@ -658,3 +663,116 @@ def test_set_electrical_parameters_converters(
     pathlib.Path(buses_path).unlink(missing_ok=True)
     pathlib.Path(converters_path).unlink(missing_ok=True)
     assert df_converters_comparison.empty
+
+
+KM = 1e3
+ORIGIN = (4321e3, 3210e3)
+
+
+def _km_frame(
+    rows: dict[str, tuple], column: str, country: str = "XX"
+) -> gpd.GeoDataFrame:
+    return gpd.GeoDataFrame(
+        {column: list(rows), "country": country},
+        geometry=[box(*(KM * c for c in coords)) for coords in rows.values()],
+        crs="EPSG:3035",
+    )
+
+
+@pytest.fixture
+def straddling_regions() -> gpd.GeoDataFrame:
+    return _km_frame({"XX1": (0, 0, 40, 20), "XX2": (40, 0, 80, 20)}, "name")
+
+
+@pytest.fixture
+def coastal_zones() -> gpd.GeoDataFrame:
+    return _km_frame({"A": (0, 0, 30, 20), "B": (30, 0, 75, 18)}, "zone_name")
+
+
+@pytest.mark.parametrize(
+    "x, y, expected",
+    [
+        (20, 10, "A"),
+        (35, 10, "B"),
+        (78, 10, "B"),
+        (32, 19.5, "B"),
+        (30.5, 19.9, "A"),
+    ],
+)
+def test_bidding_zone_shapes(straddling_regions, coastal_zones, x, y, expected):
+    shapes = bidding_zone_shapes(straddling_regions, coastal_zones).set_index("admin")
+    assert shapes.crs == straddling_regions.crs
+    assert shapes.area.sum() == pytest.approx(80 * 20 * KM**2)
+    assert list(shapes.index[shapes.contains(Point(x * KM, y * KM))]) == [expected]
+
+
+@pytest.mark.parametrize(
+    "x, expected", [(20, "A"), (78, "B"), (90, "YY00"), (110, "YY00")]
+)
+def test_bidding_zone_shapes_country_without_zones(
+    straddling_regions, coastal_zones, x, expected
+):
+    regions = pd.concat(
+        [straddling_regions, _km_frame({"YY1": (80, 0, 120, 20)}, "name", "YY")]
+    )
+    shapes = bidding_zone_shapes(regions, coastal_zones).set_index("admin")
+    assert sorted(shapes.index) == ["A", "B", "YY00"]
+    assert shapes.loc["YY00", "country"] == "YY"
+    assert shapes.area["YY00"] == pytest.approx(40 * 20 * KM**2)
+    assert list(shapes.index[shapes.contains(Point(x * KM, 10 * KM))]) == [expected]
+
+
+@pytest.fixture
+def two_country_inputs(straddling_regions, coastal_zones, tmpdir):
+    regions = pd.concat(
+        [
+            straddling_regions,
+            _km_frame(
+                {"YY1": (80, 0, 100, 20), "YY2": (100, 0, 120, 20)}, "name", "YY"
+            ),
+        ]
+    ).rename(columns={"name": "index"})
+    regions = regions.assign(
+        level3=regions["index"], level2=regions["country"], level1=regions["country"]
+    )
+    zones = pd.concat(
+        [coastal_zones, _km_frame({"C": (80, 0, 120, 20)}, "zone_name", "YY")]
+    )
+    nuts3_path = str(tmpdir / "nuts3.geojson")
+    zones_path = str(tmpdir / "zones.geojson")
+    for frame, path in [(regions, nuts3_path), (zones, zones_path)]:
+        frame.set_geometry(frame.translate(*ORIGIN)).to_crs(epsg=4326).to_file(path)
+
+    points = gpd.GeoSeries(
+        [Point(x * KM, 10 * KM) for x in (20, 60, 90, 110)], crs="EPSG:3035"
+    )
+    points = points.translate(*ORIGIN).to_crs(epsg=4326)
+    n = pypsa.Network()
+    n.add(
+        "Bus",
+        ["b1", "b2", "b3", "b4"],
+        x=points.x.values,
+        y=points.y.values,
+        country=["XX", "XX", "YY", "YY"],
+    )
+    return n, nuts3_path, zones_path
+
+
+@pytest.mark.parametrize(
+    "admin_levels, expected",
+    [
+        ({"level": 3, "countries": {}}, ["XX1", "XX2", "YY1", "YY2"]),
+        ({"level": "bz", "countries": {"YY": 3}}, ["A", "B", "YY1", "YY2"]),
+        ({"level": 3, "countries": {"XX": "bz"}}, ["A", "B", "YY1", "YY2"]),
+        ({"level": "bz", "countries": {"YY1": 3}}, ["A", "B", "C", "YY1"]),
+    ],
+)
+def test_build_admin_shapes_bidding_zones(two_country_inputs, admin_levels, expected):
+    n, nuts3_path, zones_path = two_country_inputs
+    shapes = build_admin_shapes(
+        n, nuts3_path, "administrative", admin_levels, ["XX", "YY"], zones_path
+    )
+    assert sorted(shapes.index) == expected
+    assert (shapes["substations"] == 1).all()
+    area = shapes.to_crs(epsg=3035).area.sum()
+    assert area == pytest.approx(120 * 20 * KM**2, rel=1e-6)

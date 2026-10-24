@@ -1469,12 +1469,91 @@ def merge_regions_recursive(
     return admin_shapes
 
 
+def nearest_zone_cells(
+    zones: gpd.GeoDataFrame, extent: shapely.Geometry, spacing: float = 1e3
+) -> gpd.GeoDataFrame:
+    """
+    Partition the extent into cells labelled by their nearest bidding zone.
+
+    Nearest zones are approximated by Voronoi cells of points sampled along the
+    zone boundaries with the given spacing in metres.
+
+    Parameters
+    ----------
+    zones : geopandas.GeoDataFrame
+        Bidding zones in a metric CRS with a 'zone_name' column.
+    extent : shapely.Geometry
+        Geometry whose envelope the cells cover at least.
+    spacing : float
+        Maximum distance between boundary sample points.
+
+    Returns
+    -------
+    geopandas.GeoDataFrame
+        Voronoi cells with a 'zone_name' column.
+    """
+    coords = zones.set_index("zone_name").boundary.segmentize(spacing).get_coordinates()
+    coords = coords[~coords.duplicated()]
+    cells = shapely.voronoi_polygons(
+        shapely.MultiPoint(coords.to_numpy()), extend_to=extent, ordered=True
+    )
+    return gpd.GeoDataFrame(
+        {"zone_name": coords.index}, geometry=list(cells.geoms), crs=zones.crs
+    )
+
+
+def bidding_zone_shapes(
+    regions: gpd.GeoDataFrame, bidding_zones: gpd.GeoDataFrame
+) -> gpd.GeoDataFrame:
+    """
+    Split the country areas of regions along bidding zone borders.
+
+    Parts of a country outside all of its bidding zone polygons are assigned
+    pointwise to the nearest bidding zone of that country. A country without any
+    bidding zone polygon forms a single zone named by its country code padded with "00".
+
+    Parameters
+    ----------
+    regions : geopandas.GeoDataFrame
+        Regions with a 'country' column whose union defines each country area.
+    bidding_zones : geopandas.GeoDataFrame
+        Bidding zones with 'zone_name' and 'country' columns.
+
+    Returns
+    -------
+    geopandas.GeoDataFrame
+        Polygons with 'admin' (bidding zone name), 'country' and 'geometry' columns.
+    """
+    areas = regions.to_crs(epsg=3035).dissolve("country").geometry
+    zones = bidding_zones.to_crs(epsg=3035)
+    pieces = []
+    for country, remaining in areas.items():
+        country_zones = zones.loc[zones["country"] == country]
+        if country_zones.empty:
+            pieces.append((f"{country}00", country, remaining))
+            continue
+        for zone, geometry in zip(country_zones["zone_name"], country_zones.geometry):
+            pieces.append((zone, country, geometry.intersection(remaining)))
+            remaining = remaining.difference(geometry)
+        if remaining.is_empty:
+            continue
+        gaps = nearest_zone_cells(country_zones, remaining).clip(remaining)
+        pieces.extend((z, country, g) for z, g in zip(gaps["zone_name"], gaps.geometry))
+
+    shapes = gpd.GeoDataFrame(
+        pieces, columns=["admin", "country", "geometry"], crs=zones.crs
+    ).explode(ignore_index=True)
+    shapes = shapes[shapes.geom_type == "Polygon"]
+    return shapes.dissolve("admin", aggfunc="first").reset_index().to_crs(regions.crs)
+
+
 def build_admin_shapes(
     n: pypsa.Network,
     nuts3_shapes: str,
     clustering: str,
     admin_levels: dict[str, int],
     countries: list[str],
+    bidding_zones: str | list,
 ) -> gpd.GeoDataFrame:
     """
     Builds administrative shapes for bus regions based on NUTS3 regions and custom clustering configuration.
@@ -1485,6 +1564,7 @@ def build_admin_shapes(
     clustering (str) : Clustering method to use ('administrative' or other).
     admin_levels (dict[str, int]) : Dictionary mapping country codes to administrative levels.
     countries (list[str]) : List of country codes to include.
+    bidding_zones (str | list) : Path to the bidding zone shapes, used for regions at level 'bz'.
 
     Returns
     -------
@@ -1549,9 +1629,15 @@ def build_admin_shapes(
         if "GB" in countries and level != "bz":
             nuts3_regions.loc[nuts3_regions.level1 == "GBI", "column"] = "level1"
 
-        nuts3_regions["admin"] = nuts3_regions.apply(
-            lambda row: row[row["column"]], axis=1
-        )
+        is_bz = nuts3_regions["column"] == "bidding_zone"
+        other = nuts3_regions.loc[~is_bz]
+        other = other.assign(admin=[row[row["column"]] for _, row in other.iterrows()])
+        if is_bz.any():
+            zones = bidding_zone_shapes(
+                nuts3_regions.loc[is_bz], gpd.read_file(bidding_zones)
+            )
+            other = pd.concat([other, zones])
+        nuts3_regions = other
     else:
         logger.info("Building bus regions per country level.")
         nuts3_regions["admin"] = nuts3_regions["country"]
@@ -1684,6 +1770,7 @@ if __name__ == "__main__":
         clustering,
         admin_levels,
         countries,
+        snakemake.input.bidding_zones,
     )
 
     onshore_regions, offshore_regions, onshore_shapes, offshore_shapes = (

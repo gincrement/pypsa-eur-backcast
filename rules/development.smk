@@ -11,6 +11,11 @@ rule base_network_incumbent:
         country_shapes=resources("country_shapes.geojson"),
         offshore_shapes=resources("offshore_shapes.geojson"),
         europe_shape=resources("europe_shape.geojson"),
+        bidding_zones=lambda w: (
+            resources("bidding_zones.geojson")
+            if config_provider("clustering", "mode")(w) == "administrative"
+            else []
+        ),
     output:
         base_network=resources("osm/comparison/incumbent/networks/base.nc"),
         onshore_regions=resources("osm/comparison/incumbent/regions_onshore.geojson"),
