@@ -19,6 +19,40 @@ MAX_INTERPOLATE_PRICE_GAP_HOURS = 3
 GapHours = Annotated[int, Field(ge=MAX_INTERPOLATE_PRICE_GAP_HOURS)]
 
 
+class HybridCapacitiesConfig(ConfigModel):
+    """Configuration for `backcast.hybrid_capacities` settings."""
+
+    enable: bool = Field(
+        False,
+        description="Raise the hourly capacity of border directions whose source is in `sources` and that touch one of the `areas` to at least `physical_factor` times the thermal capacity (`s_nom * s_max_pu` of lines, `p_nom * p_max_pu` of DC links) of the branches between the two buses, e.g. for the monthly maximum of scheduled exchanges in the flow-based Core region, which underestimates the available capacity.",
+    )
+    physical_factor: Annotated[float, Field(gt=0)] = Field(
+        0.7,
+        description="Share of the thermal capacity used as lower bound of the capacity.",
+    )
+    sources: list[Literal["ntc", "scheduled_exchange"]] = Field(
+        default_factory=lambda: ["scheduled_exchange"],
+        description="Capacity sources of `build_cross_border_capacities` that are raised. The offered capacities of the Nordic and Baltic borders are never raised.",
+    )
+    areas: list[str] = Field(
+        default_factory=lambda: [
+            "AT",
+            "BE",
+            "CZ",
+            "DE_LU",
+            "FR",
+            "HR",
+            "HU",
+            "NL",
+            "PL",
+            "RO",
+            "SI",
+            "SK",
+        ],
+        description="ENTSO-E areas of which at least one must be at an end of a raised border direction, by default the flow-based Core region.",
+    )
+
+
 class BackcastConfig(ConfigModel):
     """Configuration for `backcast` settings."""
 
@@ -52,6 +86,31 @@ class BackcastConfig(ConfigModel):
     exchange_proxy_borders: list[str] = Field(
         default_factory=list,
         description="Bidding zone borders that use the monthly maximum of the day-ahead scheduled commercial exchanges over both directions as capacity even if ENTSO-E publishes capacities, used with `electricity: cross_border_capacities: ntc`. Given as alphabetically sorted ENTSO-E area pairs like `BE-NL`, e.g. for borders within the flow-based Core region whose published net transfer capacities are outdated. `fixed_border_capacities` take precedence.",
+    )
+
+    calibrate_wind: bool = Field(
+        False,
+        description="Scale the onshore and offshore wind availability (`p_max_pu`) per ENTSO-E area in `data/entsoe_area_to_bus.csv` so that the available energy matches the actual generation reported by the ENTSO-E Transparency Platform plus `wind_curtailment_twh`. Only months with actual generation of the carrier are compared. One factor per area and carrier, `p_max_pu` is clipped at 1. Generators of areas without actual generation of their carrier keep their availability. Requires `foresight: overnight`.",
+    )
+    wind_curtailment_twh: dict[
+        str,
+        Annotated[float, Field(ge=0)]
+        | dict[Literal["onwind", "offwind"], Annotated[float, Field(ge=0)]],
+    ] = Field(
+        default_factory=dict,
+        description="Curtailed wind energy in TWh per ENTSO-E area added to the actual generation with `calibrate_wind`, either per carrier like `DE_LU: {onwind: 6, offwind: 4}` or as a total split between onshore and offshore wind by their actual generation. The ENTSO-E actual generation is reported after curtailment, e.g. after redispatch in `DE_LU`.",
+    )
+    monthly_nuclear_availability: bool = Field(
+        False,
+        description="Set the nuclear availability (`p_max_pu`) per ENTSO-E area in `data/entsoe_area_to_bus.csv` and month to the actual monthly capacity factor, i.e. the actual generation divided by the nuclear capacity of the area and the hours of the month, clipped to [0, 1]. Months without data count as zero, which captures outages and phase-outs during the year, e.g. the German nuclear exit in April 2023. Areas without any published generation keep their availability, areas that publish generation but no nuclear generation while having nuclear generators raise an error. Requires `foresight: overnight`.",
+    )
+    nuclear_area_map: dict[str, str] = Field(
+        default_factory=dict,
+        description="ENTSO-E areas whose nuclear generators are calibrated with `monthly_nuclear_availability` from the actual generation of another area, pooling their capacity, e.g. `SE_4: SE_3` as the clustered `SE04` region contains Ringhals and Oskarshamn, which report to `SE_3`.",
+    )
+    hybrid_capacities: HybridCapacitiesConfig = Field(
+        default_factory=HybridCapacitiesConfig,
+        description="Raise cross-border capacities from proxy sources to a share of the physical transmission capacity, used with `electricity: cross_border_capacities: ntc`.",
     )
 
     @field_validator("fixed_border_capacities", "exchange_proxy_borders")

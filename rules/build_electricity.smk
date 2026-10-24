@@ -526,6 +526,37 @@ rule build_day_ahead_prices:
         scripts("build_day_ahead_prices.py")
 
 
+def input_actual_generation(w) -> dict[str, list[str]]:
+    return {
+        area: expand(
+            f"{ENTSOE_GENERATION_DATA['folder']}/actual_generation_{area}_{{year}}.csv",
+            year=snapshot_years(w),
+        )
+        for area in modelled_entsoe_areas(w)
+    }
+
+
+rule build_entsoe_generation:
+    """Builds the monthly actual generation per ENTSO-E bidding zone area and model carrier."""
+    input:
+        unpack(input_actual_generation),
+    output:
+        csv=resources("entsoe_generation_monthly.csv"),
+    log:
+        logs("build_entsoe_generation.log"),
+    benchmark:
+        benchmarks("build_entsoe_generation")
+    threads: 1
+    resources:
+        mem_mb=2000,
+    params:
+        snapshots=config_provider("snapshots"),
+        drop_leap_day=config_provider("enable", "drop_leap_day"),
+        areas=lambda w: sorted(modelled_entsoe_areas(w)),
+    script:
+        scripts("build_entsoe_generation.py")
+
+
 rule build_cross_border_capacities:
     """Builds hourly cross-border capacities between the buses of the bidding zone clustered network."""
     input:

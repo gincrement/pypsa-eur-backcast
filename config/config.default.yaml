@@ -546,6 +546,28 @@ backcast:
   max_capacity_gap_hours: 48
   fixed_border_capacities: {}
   exchange_proxy_borders: []
+  calibrate_wind: false
+  wind_curtailment_twh: {}
+  monthly_nuclear_availability: false
+  nuclear_area_map: {}
+  hybrid_capacities:
+    enable: false
+    physical_factor: 0.7
+    sources:
+    - scheduled_exchange
+    areas:
+    - AT
+    - BE
+    - CZ
+    - DE_LU
+    - FR
+    - HR
+    - HU
+    - NL
+    - PL
+    - RO
+    - SI
+    - SK
 
 # docs in https://pypsa-eur.readthedocs.io/en/latest/configuration/#pypsa_eur_cf
 pypsa_eur:
@@ -1499,6 +1521,9 @@ data:
     source: archive
     version: latest
   entsoe_day_ahead_prices:
+    source: build
+    version: latest
+  entsoe_actual_generation:
     source: build
     version: latest
   entsoe_cross_border_capacities:

@@ -39,6 +39,11 @@ from scripts.add_electricity import (
     sanitize_locations,
 )
 from scripts.add_existing_baseyear import main as add_existing_capacities
+from scripts.lib.backcast_calibration import (
+    apply_monthly_availability,
+    calibrate_wind,
+    read_generation,
+)
 from scripts.lib.cross_border import apply_cross_border_capacities
 from scripts.lib.entsoe import read_area_to_bus
 from scripts.prepare_network import (
@@ -102,6 +107,25 @@ if __name__ == "__main__":
             n,
             pd.read_csv(inputs.cross_border_capacities, index_col=0, parse_dates=True),
             read_area_to_bus(inputs.area_to_bus),
+            pd.read_csv(inputs.cross_border_capacities_sources, index_col=0),
+            params.backcast["hybrid_capacities"],
+        )
+
+    if params.backcast["calibrate_wind"]:
+        calibrate_wind(
+            n,
+            read_generation(inputs.entsoe_generation),
+            read_area_to_bus(inputs.area_to_bus),
+            params.backcast["wind_curtailment_twh"],
+        )
+
+    if params.backcast["monthly_nuclear_availability"]:
+        apply_monthly_availability(
+            n,
+            read_generation(inputs.entsoe_generation),
+            read_area_to_bus(inputs.area_to_bus),
+            "nuclear",
+            params.backcast["nuclear_area_map"],
         )
 
     if sector_mode:

@@ -253,3 +253,14 @@ class ConfigSchema(BaseModel):
                 "CORINE_API_TOKEN). You can set these in a .env file in the project root."
             )
         return data
+
+    @model_validator(mode="after")
+    def check_backcast_calibration_foresight(self) -> "ConfigSchema":
+        """Require overnight foresight for the backcast calibration."""
+        calibrate = (
+            self.backcast.calibrate_wind or self.backcast.monthly_nuclear_availability
+        )
+        assert self.foresight.root == "overnight" or not calibrate, (
+            "backcast: calibrate_wind and monthly_nuclear_availability require foresight: overnight."
+        )
+        return self

@@ -22,6 +22,10 @@ def get_compose_inputs(w):
     elec = cfg["electricity"]
     sector = cfg["sector"]
     import_carriers = sector["imports"]["price"] if sector["imports"]["enable"] else {}
+    calibrate = (
+        cfg["backcast"]["calibrate_wind"]
+        or cfg["backcast"]["monthly_nuclear_availability"]
+    )
 
     # Electricity-only inputs (always included)
     inputs = dict(
@@ -68,10 +72,18 @@ def get_compose_inputs(w):
             if elec["cross_border_capacities"] == "ntc"
             else []
         ),
-        area_to_bus=(
-            "data/entsoe_area_to_bus.csv"
+        cross_border_capacities_sources=(
+            resources("cross_border_capacities_sources.csv")
             if elec["cross_border_capacities"] == "ntc"
             else []
+        ),
+        area_to_bus=(
+            "data/entsoe_area_to_bus.csv"
+            if elec["cross_border_capacities"] == "ntc" or calibrate
+            else []
+        ),
+        entsoe_generation=(
+            resources("entsoe_generation_monthly.csv") if calibrate else []
         ),
         solar_rooftop_potentials=(
             resources("solar_rooftop_potentials.csv")
@@ -284,5 +296,6 @@ rule compose_network:
         ),
         co2_budget=config_provider("co2_budget"),
         adjustments=config_provider("adjustments"),
+        backcast=config_provider("backcast"),
     script:
         scripts("compose_network.py")

@@ -49,6 +49,7 @@ path = [
     "data/unit_commitment.csv",
     "data/versions.csv",
     "data/custom_costs.csv",
+    "config/backcast/custom_costs.backcast-2023.csv",
 ]
 SPDX-FileCopyrightText = "The PyPSA-Eur Authors"
 SPDX-License-Identifier = "CC-BY-4.0"

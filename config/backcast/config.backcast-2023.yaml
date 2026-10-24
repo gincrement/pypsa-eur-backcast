@@ -32,6 +32,11 @@ electricity:
     from_irenastat: true
     year: 2023
 
+renewable:
+  hydro:
+    flatten_dispatch: true
+    flatten_dispatch_buffer: 0.2
+
 conventional:
   dynamic_fuel_price: true
   fuel_price_rolling_window: 1
@@ -42,6 +47,7 @@ conventional:
 
 costs:
   year: 2020
+  custom_cost_fn: config/backcast/custom_costs.backcast-2023.csv
   emission_prices:
     dynamic: true
     rolling_window: 1
@@ -88,7 +94,13 @@ backcast:
   fixed_border_capacities:
     DK_1-GB: 0
     FI-SE_2: 0
-    IT_CALA-IT_CSUD: 0
+    IT_CALA-IT_CSUD: physical
     FR-IT_CNOR: physical
     FR-IT_SARD: physical
   exchange_proxy_borders: [BE-NL, DE_LU-NL]
+  calibrate_wind: true
+  wind_curtailment_twh:
+    DE_LU: {onwind: 6, offwind: 4}
+  monthly_nuclear_availability: true
+  nuclear_area_map:
+    SE_4: SE_3

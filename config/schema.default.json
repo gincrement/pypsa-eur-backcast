@@ -444,6 +444,82 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "calibrate_wind": {
+          "default": false,
+          "description": "Scale the onshore and offshore wind availability (`p_max_pu`) per ENTSO-E area in `data/entsoe_area_to_bus.csv` so that the available energy matches the actual generation reported by the ENTSO-E Transparency Platform plus `wind_curtailment_twh`. Only months with actual generation of the carrier are compared. One factor per area and carrier, `p_max_pu` is clipped at 1. Generators of areas without actual generation of their carrier keep their availability. Requires `foresight: overnight`.",
+          "type": "boolean"
+        },
+        "wind_curtailment_twh": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "additionalProperties": {
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "propertyNames": {
+                  "enum": [
+                    "onwind",
+                    "offwind"
+                  ]
+                },
+                "type": "object"
+              }
+            ]
+          },
+          "description": "Curtailed wind energy in TWh per ENTSO-E area added to the actual generation with `calibrate_wind`, either per carrier like `DE_LU: {onwind: 6, offwind: 4}` or as a total split between onshore and offshore wind by their actual generation. The ENTSO-E actual generation is reported after curtailment, e.g. after redispatch in `DE_LU`.",
+          "type": "object"
+        },
+        "monthly_nuclear_availability": {
+          "default": false,
+          "description": "Set the nuclear availability (`p_max_pu`) per ENTSO-E area in `data/entsoe_area_to_bus.csv` and month to the actual monthly capacity factor, i.e. the actual generation divided by the nuclear capacity of the area and the hours of the month, clipped to [0, 1]. Months without data count as zero, which captures outages and phase-outs during the year, e.g. the German nuclear exit in April 2023. Areas without any published generation keep their availability, areas that publish generation but no nuclear generation while having nuclear generators raise an error. Requires `foresight: overnight`.",
+          "type": "boolean"
+        },
+        "nuclear_area_map": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "ENTSO-E areas whose nuclear generators are calibrated with `monthly_nuclear_availability` from the actual generation of another area, pooling their capacity, e.g. `SE_4: SE_3` as the clustered `SE04` region contains Ringhals and Oskarshamn, which report to `SE_3`.",
+          "type": "object"
+        },
+        "hybrid_capacities": {
+          "description": "Configuration for `backcast.hybrid_capacities` settings.",
+          "properties": {
+            "enable": {
+              "default": false,
+              "description": "Raise the hourly capacity of border directions whose source is in `sources` and that touch one of the `areas` to at least `physical_factor` times the thermal capacity (`s_nom * s_max_pu` of lines, `p_nom * p_max_pu` of DC links) of the branches between the two buses, e.g. for the monthly maximum of scheduled exchanges in the flow-based Core region, which underestimates the available capacity.",
+              "type": "boolean"
+            },
+            "physical_factor": {
+              "default": 0.7,
+              "description": "Share of the thermal capacity used as lower bound of the capacity.",
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            "sources": {
+              "description": "Capacity sources of `build_cross_border_capacities` that are raised. The offered capacities of the Nordic and Baltic borders are never raised.",
+              "items": {
+                "enum": [
+                  "ntc",
+                  "scheduled_exchange"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "areas": {
+              "description": "ENTSO-E areas of which at least one must be at an end of a raised border direction, by default the flow-based Core region.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          }
         }
       }
     },
@@ -1624,6 +1700,26 @@
             }
           }
         },
+        "entsoe_actual_generation": {
+          "description": "Configuration for a single data source.",
+          "properties": {
+            "source": {
+              "default": "archive",
+              "description": "Source of the data. 'archive' retrieves pre-built data, 'primary' retrieves from primary source.",
+              "enum": [
+                "archive",
+                "primary",
+                "build"
+              ],
+              "type": "string"
+            },
+            "version": {
+              "default": "latest",
+              "description": "Version of the data to use. Uses the specific 'version' for the selected 'source' or the dataset tagged 'latest' for this source.",
+              "type": "string"
+            }
+          }
+        },
         "entsoe_cross_border_capacities": {
           "description": "Configuration for a single data source.",
           "properties": {
@@ -2750,6 +2846,40 @@
         "perfect"
       ],
       "type": "string"
+    },
+    "HybridCapacitiesConfig": {
+      "description": "Configuration for `backcast.hybrid_capacities` settings.",
+      "properties": {
+        "enable": {
+          "default": false,
+          "description": "Raise the hourly capacity of border directions whose source is in `sources` and that touch one of the `areas` to at least `physical_factor` times the thermal capacity (`s_nom * s_max_pu` of lines, `p_nom * p_max_pu` of DC links) of the branches between the two buses, e.g. for the monthly maximum of scheduled exchanges in the flow-based Core region, which underestimates the available capacity.",
+          "type": "boolean"
+        },
+        "physical_factor": {
+          "default": 0.7,
+          "description": "Share of the thermal capacity used as lower bound of the capacity.",
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        "sources": {
+          "description": "Capacity sources of `build_cross_border_capacities` that are raised. The offered capacities of the Nordic and Baltic borders are never raised.",
+          "items": {
+            "enum": [
+              "ntc",
+              "scheduled_exchange"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "areas": {
+          "description": "ENTSO-E areas of which at least one must be at an end of a raised border direction, by default the flow-based Core region.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      }
     },
     "IndustryConfig": {
       "description": "Configuration for `industry` settings.",
@@ -12371,6 +12501,82 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "calibrate_wind": {
+          "default": false,
+          "description": "Scale the onshore and offshore wind availability (`p_max_pu`) per ENTSO-E area in `data/entsoe_area_to_bus.csv` so that the available energy matches the actual generation reported by the ENTSO-E Transparency Platform plus `wind_curtailment_twh`. Only months with actual generation of the carrier are compared. One factor per area and carrier, `p_max_pu` is clipped at 1. Generators of areas without actual generation of their carrier keep their availability. Requires `foresight: overnight`.",
+          "type": "boolean"
+        },
+        "wind_curtailment_twh": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "additionalProperties": {
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "propertyNames": {
+                  "enum": [
+                    "onwind",
+                    "offwind"
+                  ]
+                },
+                "type": "object"
+              }
+            ]
+          },
+          "description": "Curtailed wind energy in TWh per ENTSO-E area added to the actual generation with `calibrate_wind`, either per carrier like `DE_LU: {onwind: 6, offwind: 4}` or as a total split between onshore and offshore wind by their actual generation. The ENTSO-E actual generation is reported after curtailment, e.g. after redispatch in `DE_LU`.",
+          "type": "object"
+        },
+        "monthly_nuclear_availability": {
+          "default": false,
+          "description": "Set the nuclear availability (`p_max_pu`) per ENTSO-E area in `data/entsoe_area_to_bus.csv` and month to the actual monthly capacity factor, i.e. the actual generation divided by the nuclear capacity of the area and the hours of the month, clipped to [0, 1]. Months without data count as zero, which captures outages and phase-outs during the year, e.g. the German nuclear exit in April 2023. Areas without any published generation keep their availability, areas that publish generation but no nuclear generation while having nuclear generators raise an error. Requires `foresight: overnight`.",
+          "type": "boolean"
+        },
+        "nuclear_area_map": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "ENTSO-E areas whose nuclear generators are calibrated with `monthly_nuclear_availability` from the actual generation of another area, pooling their capacity, e.g. `SE_4: SE_3` as the clustered `SE04` region contains Ringhals and Oskarshamn, which report to `SE_3`.",
+          "type": "object"
+        },
+        "hybrid_capacities": {
+          "description": "Configuration for `backcast.hybrid_capacities` settings.",
+          "properties": {
+            "enable": {
+              "default": false,
+              "description": "Raise the hourly capacity of border directions whose source is in `sources` and that touch one of the `areas` to at least `physical_factor` times the thermal capacity (`s_nom * s_max_pu` of lines, `p_nom * p_max_pu` of DC links) of the branches between the two buses, e.g. for the monthly maximum of scheduled exchanges in the flow-based Core region, which underestimates the available capacity.",
+              "type": "boolean"
+            },
+            "physical_factor": {
+              "default": 0.7,
+              "description": "Share of the thermal capacity used as lower bound of the capacity.",
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            "sources": {
+              "description": "Capacity sources of `build_cross_border_capacities` that are raised. The offered capacities of the Nordic and Baltic borders are never raised.",
+              "items": {
+                "enum": [
+                  "ntc",
+                  "scheduled_exchange"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "areas": {
+              "description": "ENTSO-E areas of which at least one must be at an end of a raised border direction, by default the flow-based Core region.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          }
         }
       }
     },
@@ -15365,6 +15571,26 @@
           }
         },
         "entsoe_day_ahead_prices": {
+          "description": "Configuration for a single data source.",
+          "properties": {
+            "source": {
+              "default": "archive",
+              "description": "Source of the data. 'archive' retrieves pre-built data, 'primary' retrieves from primary source.",
+              "enum": [
+                "archive",
+                "primary",
+                "build"
+              ],
+              "type": "string"
+            },
+            "version": {
+              "default": "latest",
+              "description": "Version of the data to use. Uses the specific 'version' for the selected 'source' or the dataset tagged 'latest' for this source.",
+              "type": "string"
+            }
+          }
+        },
+        "entsoe_actual_generation": {
           "description": "Configuration for a single data source.",
           "properties": {
             "source": {

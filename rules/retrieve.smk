@@ -612,6 +612,26 @@ if (ENTSOE_PRICES_DATA := dataset_version("entsoe_day_ahead_prices"))["source"] 
             scripts("retrieve_day_ahead_prices_entsoe.py")
 
 
+if (ENTSOE_GENERATION_DATA := dataset_version("entsoe_actual_generation"))[
+    "source"
+] in ["build"]:
+
+    rule retrieve_actual_generation_entsoe:
+        """Downloads actual generation per production type for one bidding zone and year from ENTSO-E."""
+        output:
+            csv=f"{ENTSOE_GENERATION_DATA['folder']}"
+            + "/actual_generation_{area}_{year}.csv",
+        log:
+            "logs/retrieve_actual_generation_entsoe_{area}_{year}.log",
+        wildcard_constraints:
+            year=r"\d{4}",
+        retries: 2
+        resources:
+            mem_mb=2000,
+        script:
+            scripts("retrieve_actual_generation_entsoe.py")
+
+
 if (ENTSOE_CAPACITIES_DATA := dataset_version("entsoe_cross_border_capacities"))[
     "source"
 ] in ["build"]:

@@ -280,3 +280,49 @@ def test_apply_cross_border_capacities_raises_on_missing_border(network):
     )
     with pytest.raises(AssertionError, match="LUG1"):
         apply_cross_border_capacities(network, capacities, AREA_TO_BUS)
+
+
+@pytest.mark.parametrize(
+    "sources, areas, expected",
+    [
+        (["scheduled_exchange"], ["FR"], {"DE00->FR00": 1500.0, "FR00->DE00": 1500.0}),
+        (["scheduled_exchange"], ["PL"], {"DE00->FR00": 100.0, "FR00->DE00": 50.0}),
+        (["ntc"], ["DE_LU"], {"LUG1->FR00": 500.0, "FR00->LUG1": 500.0}),
+    ],
+    ids=["raised", "other-areas", "other-source"],
+)
+def test_apply_cross_border_capacities_hybrid(network, sources, areas, expected):
+    capacities = pd.DataFrame(
+        {"DE00->FR00": 100.0, "FR00->DE00": 50.0, "FR00->LUG1": 0.0, "LUG1->FR00": 0.0},
+        index=SNAPSHOTS,
+    )
+    border_sources = pd.DataFrame(
+        {
+            "area_from": ["DE_LU", "FR", "FR", "DE_LU"],
+            "area_to": ["FR", "DE_LU", "DE_LU", "FR"],
+            "source": ["scheduled_exchange"] * 2 + ["ntc"] * 2,
+        },
+        index=capacities.columns,
+    )
+    hybrid = {
+        "enable": True,
+        "physical_factor": 0.5,
+        "sources": sources,
+        "areas": areas,
+    }
+
+    apply_cross_border_capacities(
+        network, capacities, AREA_TO_BUS, border_sources, hybrid
+    )
+
+    links = network.links
+    p_max = network.links_t.p_max_pu.mul(links.p_nom).iloc[0]
+    p_min = network.links_t.p_min_pu.mul(links.p_nom).iloc[0]
+    result = {
+        "DE00->FR00": p_max["DE00->FR00"],
+        "FR00->DE00": -p_min["DE00->FR00"],
+        "FR00->LUG1": p_max["FR00->LUG1"],
+        "LUG1->FR00": -p_min["FR00->LUG1"],
+    }
+    for name, value in expected.items():
+        assert result[name] == pytest.approx(value)

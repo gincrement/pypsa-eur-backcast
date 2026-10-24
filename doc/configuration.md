@@ -469,7 +469,14 @@ the transmission capacities between bidding zones are retrieved from the
 ENTSO-E Transparency Platform for the borders listed in
 `data/entsoe_borders.csv`, except for the borders given in
 `fixed_border_capacities`. The file lists the bidding zone borders with lines
-or DC links in the bidding zone clustered network. The rule
+or DC links in the bidding zone clustered network. With `calibrate_wind` or
+`monthly_nuclear_availability`, the actual generation per production type of
+all modelled bidding zones in `data/entsoe_area_to_bus.csv` is retrieved from
+the ENTSO-E Transparency Platform ([build_entsoe_generation][]) and calibrates
+the wind and nuclear availability in [compose_network][]. Bidding zones without
+published generation, e.g. `GB` after 2020, keep their availability. With
+`hybrid_capacities`, cross-border capacities from proxy sources are raised to a
+share of the physical transmission capacity in [compose_network][]. The rule
 [evaluate_price_backcast][] compares the modelled with the observed prices.
 
 {{ schema_table("backcast") }}

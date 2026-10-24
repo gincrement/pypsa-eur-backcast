@@ -20,6 +20,10 @@ and hydro power. Their outputs are attached to the clustered network by
 
 {{ rules("build_day_ahead_prices") }}
 
+## Actual generation
+
+{{ rules("build_entsoe_generation") }}
+
 ## Cross-border capacities
 
 {{ rules("build_cross_border_capacities") }}
