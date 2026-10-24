@@ -6,10 +6,14 @@ Retrieves the day-ahead electricity prices of one bidding zone and year from the
 
 The prices are queried through the ENTSO-E API for the calendar year in UTC and
 stored in their native market time unit with UTC timestamps. An API token must
-be set in the environment variable ``ENTSOE_API_TOKEN``. The query fails if no data is published for the area and year.
+be set in the environment variable ``ENTSOE_API_TOKEN``. The query fails if no data is published for the area and year
+or if any price is not given in EUR, e.g. in PLN, RON or BGN in 2019.
 """
 
 import logging
+import re
+
+from entsoe import EntsoeRawClient
 
 from scripts._helpers import configure_logging, set_scenario_config
 from scripts.lib.entsoe import entsoe_client, to_utc, utc_year
@@ -32,8 +36,14 @@ if __name__ == "__main__":
 
     logger.info(f"Querying day-ahead prices for {area} in {year}...")
 
+    client = entsoe_client()
+    xml = EntsoeRawClient.query_day_ahead_prices(client, area, start=start, end=end)
+    currencies = set(re.findall(r"<currency_Unit\.name>(\w+)<", xml))
+    assert currencies == {"EUR"}, (
+        f"Day-ahead prices of {area} in {year} are given in {sorted(currencies)}, not only EUR. Add {area} to backcast: exclude_price_areas."
+    )
     prices = to_utc(
-        entsoe_client().query_day_ahead_prices(area, start=start, end=end), end, area
+        client.query_day_ahead_prices(area, start=start, end=end), end, area
     )
 
     prices.to_csv(snakemake.output.csv)
