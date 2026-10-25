@@ -21,7 +21,9 @@ from dashboard.views.common import (
     price_traces,
     takeaway,
     zone_layout,
+    zone_link,
 )
+from dashboard.views.zone import duration_figure, profile_figures, run_lines
 from scripts.lib.backcast_plotting import MODEL_COLOR, SECOND_COLOR
 
 SAME_YEAR = {
@@ -95,6 +97,24 @@ def lead(ctx: Context, a: pd.DataFrame, b: pd.DataFrame, column: str) -> str:
     return f"{text} The runs cover different years, so they are compared on relative MAE and r over each whole year."
 
 
+def other_year(ctx: Context) -> None:
+    """Duration curves and daily profiles of the selected zone over both whole years, run B dashed."""
+    run, other = ctx.run, ctx.compare.run
+    st.subheader(f"{ctx.area}: {run.name} vs {other.name}, whole years")
+    if ctx.area not in other.buses:
+        st.info(f"{other.name} has no prices for {ctx.area}")
+        return
+    lines = [
+        *run_lines(run, ctx.area, run.observed.index),
+        *run_lines(other, ctx.area, other.observed.index, "dash"),
+    ]
+    figures = [duration_figure(lines), *profile_figures(lines)]
+    figures[0].update_layout(title="duration curve")
+    for column, figure in zip(st.columns(len(figures)), figures):
+        figure.update_layout(legend=dict(orientation="h", y=-0.25, x=0))
+        column.plotly_chart(figure, width="stretch")
+
+
 def render(ctx: Context) -> None:
     """Draw the comparison page."""
     if ctx.compare is None:
@@ -106,7 +126,7 @@ def render(ctx: Context) -> None:
     common = a.index.intersection(b.index)
     a, b = a.loc[common], b.loc[common]
     deltas = SAME_YEAR if ctx.same_year else OTHER_YEAR
-    takeaway(lead(ctx, a, b, next(iter(deltas.values()))))
+    takeaway(lead(ctx, a, b, next(iter(deltas.values()))), [zone_link(ctx.area)])
     left, right = st.columns([3, 2])
     with left:
         st.subheader("Change per zone (A minus B)")
@@ -118,6 +138,7 @@ def render(ctx: Context) -> None:
             skill_scatter({ctx.run.name: a, ctx.compare.name: b}), width="stretch"
         )
     if not ctx.same_year:
+        other_year(ctx)
         return
     observed = ctx.run.area_observed
     second = ctx.compare.area_model(ctx.run.buses)

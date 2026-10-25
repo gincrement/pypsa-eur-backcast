@@ -12,3 +12,12 @@ QUESTIONS = {
     "Compare runs": "What changed between {run} and {compare}?",
 }
 PAGES = list(QUESTIONS)
+RUN = ["run_a", "run_b", "period"]
+CONTROLS = {
+    "Report": [],
+    "Overview": RUN,
+    "Error patterns": ["run_a", "period"],
+    "Zone detail": [*RUN, "area", "agg"],
+    "Dispatch and flows": ["run_a", "area", "period", "agg"],
+    "Compare runs": [*RUN, "area", "agg"],
+}

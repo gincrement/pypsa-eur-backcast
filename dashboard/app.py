@@ -15,6 +15,7 @@ import yaml
 from dashboard import data
 from dashboard.state import DEFAULTS, init_state, sync_query_params
 from dashboard.views import (
+    CONTROLS,
     PAGES,
     QUESTIONS,
     compare,
@@ -86,7 +87,7 @@ def period_dates(run: data.RunData) -> tuple[date, date]:
 
 def period_label(period: str, hours: pd.DatetimeIndex) -> str:
     """Readable name of the selected period."""
-    if period == "month":
+    if period in data.MONTH_NAMES:
         return hours[0].strftime("%B %Y")
     if period == "year":
         return f"the year {hours[0].year}"
@@ -105,11 +106,7 @@ def period_hours(
 ) -> pd.DatetimeIndex:
     """Hours of the selected period preset in the year of a run."""
     return data.period_index(
-        run.observed.index,
-        st.session_state.period,
-        run.weeks,
-        st.session_state.month,
-        dates,
+        run.observed.index, st.session_state.period, run.weeks, dates
     )
 
 
@@ -122,48 +119,59 @@ def reference(
     return Reference(run, hours, period_label(st.session_state.period, hours))
 
 
-def sidebar(runs: list[str]) -> Context:
-    """Draw the global sidebar and return the page context."""
-    bar = st.sidebar
-    if st.session_state.page not in PAGES:
-        st.session_state.page = PAGES[0]
-    bar.radio("Page", PAGES, key="page")
-    if st.session_state.run_a not in runs:
-        st.session_state.run_a = runs[-1]
-    bar.divider()
-    bar.selectbox("Run A", runs, key="run_a")
-    run = cached_run(st.session_state.run_a)
+def normalise(runs: list[str]) -> tuple[data.RunData, list[str]]:
+    """Reset state values that the selected run does not offer and return the run and the comparison choices."""
+    state = st.session_state
+    if state.page not in PAGES:
+        state.page = PAGES[0]
+    if state.run_a not in runs:
+        state.run_a = runs[-1]
+    run = cached_run(state.run_a)
     choices = [
         "",
         *[r for r in runs if r != run.name],
         *data.discover_variants(data.VARIANTS),
     ]
-    if st.session_state.run_b not in choices:
-        st.session_state.run_b = ""
-    bar.selectbox(
-        "Run B or variant", choices, key="run_b", format_func=lambda c: c or "none"
-    )
+    if state.run_b not in choices:
+        state.run_b = ""
     areas = list(run.buses.index)
-    if st.session_state.area not in areas:
-        st.session_state.area = (
-            DEFAULTS["area"] if DEFAULTS["area"] in areas else areas[0]
+    if state.area not in areas:
+        state.area = DEFAULTS["area"] if DEFAULTS["area"] in areas else areas[0]
+    if state.period not in data.PERIODS:
+        state.period = DEFAULTS["period"]
+    if state.agg not in ["auto", *data.AGGREGATIONS]:
+        state.agg = DEFAULTS["agg"]
+    return run, choices
+
+
+def sidebar(runs: list[str]) -> Context:
+    """Draw the page list and the controls the page uses, return the page context."""
+    run, choices = normalise(runs)
+    bar = st.sidebar
+    bar.radio("Page", PAGES, key="page")
+    controls = CONTROLS[st.session_state.page]
+    if controls:
+        bar.divider()
+    if "run_a" in controls:
+        bar.selectbox("Run A", runs, key="run_a")
+    if "run_b" in controls:
+        bar.selectbox(
+            "Run B or variant", choices, key="run_b", format_func=lambda c: c or "none"
         )
-    bar.selectbox("Bidding zone", areas, key="area")
-    bar.divider()
-    bar.selectbox("Period", data.PRESETS, key="period")
-    dates = None
-    if st.session_state.period == "month":
-        bar.slider("Month", 1, 12, key="month")
-    if st.session_state.period == "custom":
+    if "area" in controls:
+        bar.selectbox("Bidding zone", list(run.buses.index), key="area")
+    if "period" in controls:
+        bar.selectbox("Period", data.PERIODS, key="period")
+    custom = st.session_state.period == "custom"
+    if custom and "period" in controls:
         picked = bar.date_input("Date range", period_dates(run))
         if len(picked) == 2:
             st.session_state.start, st.session_state.end = map(str, picked)
-        dates = tuple(pd.Timestamp(d) for d in period_dates(run))
-    if st.session_state.agg not in ["auto", *data.AGGREGATIONS]:
-        st.session_state.agg = "auto"
-    bar.segmented_control(
-        "Time series resolution", ["auto", *data.AGGREGATIONS], key="agg"
-    )
+    dates = tuple(pd.Timestamp(d) for d in period_dates(run)) if custom else None
+    if "agg" in controls:
+        bar.segmented_control(
+            "Time series resolution", ["auto", *data.AGGREGATIONS], key="agg"
+        )
     stale = data.stale_sources(run.manifest)
     if stale:
         bar.warning(
@@ -187,6 +195,15 @@ def sidebar(runs: list[str]) -> Context:
     )
 
 
+def selection(ctx: Context, controls: list[str]) -> str:
+    """The sidebar state a page uses as one line."""
+    run = ctx.run.name
+    if "run_b" in controls and ctx.compare is not None:
+        run += f" vs {ctx.compare.name}"
+    parts = [run, ctx.area if "area" in controls else "", ctx.period]
+    return " | ".join(p for p in parts if p) if controls else ""
+
+
 st.set_page_config(page_title="Backcast dashboard", layout="wide")
 init_state()
 runs = data.discover_runs(data.CACHE)
@@ -198,7 +215,9 @@ if not runs:
 context = sidebar(runs)
 page = st.session_state.page
 compare_name = context.compare.name if context.compare is not None else "run B"
-st.title(page)
+title, line = st.columns([3, 2], vertical_alignment="bottom")
+title.title(page)
+line.caption(selection(context, CONTROLS[page]), text_alignment="right")
 st.markdown(
     QUESTIONS[page].format(
         area=context.area, run=context.run.name, compare=compare_name

@@ -5,6 +5,7 @@
 Overview: headline metrics against the validation year, metric map and per-zone price, MAE and correlation.
 """
 
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -17,8 +18,8 @@ from dashboard.views.common import (
     show,
     takeaway,
     worst,
-    zone_height,
     zone_layout,
+    zone_link,
 )
 from scripts.evaluate_price_backcast import price_metrics
 from scripts.lib.backcast_plotting import (
@@ -31,12 +32,9 @@ from scripts.lib.backcast_plotting import (
     symmetric_limit,
 )
 
-LOWER_IS_BETTER = {
-    "median MAE (€/MWh)",
-    "median MAE / mean price",
-    "median |bias| (€/MWh)",
-}
-PERCENT = {"median MAE / mean price"}
+LOWER_IS_BETTER = {"MAE", "MAE / mean", "|bias|"}
+PERCENT = {"MAE / mean"}
+MAP_HEIGHT = 520
 MAP_METRICS = {
     "MAE (€/MWh)": "mae",
     "bias (€/MWh)": "mean_bias",
@@ -82,9 +80,9 @@ def kpi_row(label: str, metrics: pd.DataFrame, reference: pd.DataFrame | None) -
 def summary(values: dict[str, float]) -> str:
     """Headline numbers as a sentence fragment."""
     return (
-        f"MAE **{values['median MAE (€/MWh)']:.2f} €/MWh** "
-        f"({values['median MAE / mean price']:.0%} of the mean price), "
-        f"r **{values['median Pearson r']:.2f}**, |bias| {values['median |bias| (€/MWh)']:.2f} €/MWh"
+        f"MAE **{values['MAE']:.2f} €/MWh** "
+        f"({values['MAE / mean']:.0%} of the mean price), "
+        f"r **{values['r']:.2f}**, |bias| {values['|bias|']:.2f} €/MWh"
     )
 
 
@@ -104,11 +102,13 @@ def lead(ctx: Context, buses: pd.DataFrame, metrics: pd.DataFrame) -> str:
     )
 
 
-def zone_map(ctx: Context, column: str, height: int) -> go.Figure:
-    """Choropleth of a bus metric over the bus regions, carrying the area of each bus."""
+def zone_map(ctx: Context, column: str) -> go.Figure:
+    """Choropleth of a bus metric over the bus regions, carrying the area of each bus and outlining the selected area."""
     values = price_metrics(
         ctx.run.model.loc[ctx.hours], ctx.run.observed.loc[ctx.hours]
     )[column]
+    areas = ctx.run.area_to_bus[values.index]
+    selected = areas.to_numpy() == ctx.area
     limit = symmetric_limit(values)
     scale = (
         dict(colorscale=DIVERGING, zmid=0, zmin=-limit, zmax=limit)
@@ -121,10 +121,11 @@ def zone_map(ctx: Context, column: str, height: int) -> go.Figure:
             featureidkey="properties.name",
             locations=values.index,
             z=values.to_numpy(),
-            customdata=ctx.run.area_to_bus[values.index].to_numpy(),
+            customdata=areas.to_numpy(),
             hovertemplate="%{customdata} (%{location}): %{z:.2f}<extra></extra>",
-            marker_line_width=0.3,
-            colorbar=dict(orientation="h", thickness=10, len=0.7, y=0, yanchor="top"),
+            marker_line_width=np.where(selected, 2.0, 0.3),
+            marker_line_color=np.where(selected, "black", "white"),
+            colorbar=dict(thickness=12, len=0.8),
             **scale,
         )
     )
@@ -135,13 +136,15 @@ def zone_map(ctx: Context, column: str, height: int) -> go.Figure:
         lataxis_range=[35.5, 71],
     )
     fig.update_layout(
-        height=height, margin=dict(l=0, r=0, t=0, b=40), clickmode="event+select"
+        height=MAP_HEIGHT, margin=dict(l=0, r=0, t=0, b=0), clickmode="event+select"
     )
     return fig
 
 
-def bars(metrics: pd.DataFrame, second: pd.DataFrame | None, label: str) -> go.Figure:
-    """Dumbbell of mean prices and bars of MAE and Pearson r per area in zone order."""
+def bars(
+    metrics: pd.DataFrame, second: pd.DataFrame | None, label: str, area: str
+) -> go.Figure:
+    """Dumbbell of mean prices and bars of MAE and Pearson r per area in zone order, the selected area in bold."""
     areas = list(metrics.index)
     fig = make_subplots(
         1,
@@ -150,10 +153,10 @@ def bars(metrics: pd.DataFrame, second: pd.DataFrame | None, label: str) -> go.F
         horizontal_spacing=0.03,
         subplot_titles=["mean price (€/MWh)", "MAE (€/MWh)", "Pearson r"],
     )
-    for area, row in metrics.iterrows():
+    for zone, row in metrics.iterrows():
         fig.add_scatter(
             x=[row.mean_observed, row.mean_model],
-            y=[area, area],
+            y=[zone, zone],
             mode="lines",
             line=dict(color=BAND_COLOR),
             showlegend=False,
@@ -197,6 +200,8 @@ def bars(metrics: pd.DataFrame, second: pd.DataFrame | None, label: str) -> go.F
         legend=dict(orientation="h", yanchor="bottom", y=1.05, x=0),
     )
     zone_layout(fig, areas)
+    labels = [f"<b>{a}</b>" if a == area else a for a in areas]
+    fig.update_yaxes(tickvals=areas, ticktext=labels)
     fig.update_layout(margin=dict(t=90))
     return fig
 
@@ -206,8 +211,14 @@ def render(ctx: Context) -> None:
     metrics = ctx.metrics()
     buses = ctx.bus_metrics()
     second = None if ctx.compare is None else ctx.compare_metrics()
-    takeaway(lead(ctx, buses, metrics))
-    st.caption("Headline numbers: median over model buses, as in price_metrics.csv.")
+    worst_zones = [*metrics.mae.nlargest(3).index, *metrics.abs_bias.nlargest(3).index]
+    takeaway(
+        lead(ctx, buses, metrics), [zone_link(a) for a in dict.fromkeys(worst_zones)]
+    )
+    st.caption(
+        "Headline numbers: median over model buses, as in price_metrics.csv. "
+        "MAE and |bias| in €/MWh, MAE / mean relative to the mean observed price, r Pearson correlation."
+    )
     kpi_row(
         f"{ctx.run.name}, {ctx.period}",
         buses,
@@ -220,17 +231,16 @@ def render(ctx: Context) -> None:
         name = st.segmented_control(
             "Map metric", list(MAP_METRICS), default=DEFAULT_MAP, key="map_metric"
         )
-        figure = zone_map(
-            ctx, MAP_METRICS[name or DEFAULT_MAP], zone_height(len(metrics))
+        points = show(
+            zone_map(ctx, MAP_METRICS[name or DEFAULT_MAP]), "zone_map", select=True
         )
-        points = show(figure, "zone_map", select=True)
+        st.caption("Click a region or a bar to open the zone detail.")
     with right:
         points += show(
-            bars(metrics, second, ctx.run.name), "overview_bars", select=True
+            bars(metrics, second, ctx.run.name, ctx.area), "overview_bars", select=True
         )
-    if points:
-        area = points[0]["customdata"]
-        follow_selection("overview", (area,), area=area)
+    area = points[0]["customdata"] if points else None
+    follow_selection("overview", area, area=area, page="Zone detail")
     table = metrics[list(TABLE_COLUMNS)].rename(columns=TABLE_COLUMNS)
     shares = [c for c in table if "≤" in c]
     table[shares] *= 100

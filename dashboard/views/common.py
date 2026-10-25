@@ -7,6 +7,7 @@ Page context and Plotly helpers shared by the dashboard pages.
 
 import calendar
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -14,6 +15,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from dashboard.data import Comparison, RunData, area_metrics
+from dashboard.state import request
 from scripts.lib.backcast_plotting import (
     DIVERGING,
     MODEL_COLOR,
@@ -30,6 +32,16 @@ CHART_HEIGHT = 420
 WORSE_COLOR = "#D55E00"
 MONTHS = list(calendar.month_abbr)[1:]
 MARKER_COLORS = {"negative price": "#CC79A7", "load shedding": WORSE_COLOR}
+
+
+@dataclass(frozen=True)
+class Line:
+    """Price series of one source drawn in the period figures."""
+
+    name: str
+    prices: pd.Series
+    color: str
+    dash: str = "solid"
 
 
 @dataclass(frozen=True)
@@ -108,9 +120,18 @@ def full_year(run: RunData) -> pd.DataFrame:
     return area_metrics(run.area_model, run.area_observed)
 
 
-def takeaway(text: str) -> None:
-    """Show the key finding of a page in a bordered box."""
+def takeaway(text: str, links: list[tuple[str, dict[str, Any]]] | None = None) -> None:
+    """Show the key finding of a page in a bordered box with a row of next-step buttons."""
     st.container(border=True).markdown(text)
+    row = st.container(horizontal=True)
+    for label, updates in links or []:
+        if row.button(label, key=f"link_{label}"):
+            request(**updates)
+
+
+def zone_link(area: str, **updates: Any) -> tuple[str, dict[str, Any]]:
+    """Next-step button opening the zone detail of an area."""
+    return f"Zone detail: {area}", dict(area=area, page="Zone detail", **updates)
 
 
 def worst(values: pd.Series, n: int = 3, signed: bool = False) -> str:

@@ -10,11 +10,18 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from dashboard.data import aggregate, month_hour_errors, tail_shares
+from dashboard.data import (
+    RunData,
+    aggregate,
+    month_hour_errors,
+    tail_shares,
+    worst_hours,
+)
 from dashboard.views.common import (
     CHART_HEIGHT,
     MONTHS,
     Context,
+    Line,
     event_markers,
     heatmap,
     price_traces,
@@ -31,24 +38,25 @@ from scripts.lib.backcast_plotting import (
 )
 
 HISTOGRAM_BINS = 80
+CONTEXT = pd.Timedelta(days=1)
 
 
 def hourly_line(ctx: Context) -> go.Figure:
-    """Model, observed and comparison prices of the year zoomed to the period."""
-    model = ctx.run.area_model[ctx.area]
-    observed = ctx.run.area_observed[ctx.area]
-    second = ctx.compare.area_model(ctx.run.buses)[ctx.area] if ctx.same_year else None
+    """Model, observed and comparison prices of the period with one day of context on each side."""
+    window = slice(ctx.hours[0] - CONTEXT, ctx.hours[-1] + CONTEXT)
+    model = ctx.run.area_model.loc[window, ctx.area]
+    observed = ctx.run.area_observed.loc[window, ctx.area]
     series = [aggregate(s, ctx.aggregation) for s in (model, observed)]
-    second = None if second is None else aggregate(second, ctx.aggregation)
+    second = None
+    if ctx.same_year:
+        prices = ctx.compare.area_model(ctx.run.buses).loc[window, ctx.area]
+        second = aggregate(prices, ctx.aggregation)
     fig = go.Figure(price_traces(ctx, *series, second))
     if ctx.aggregation == "hourly":
         shedding = ctx.run.load["load_shedding"].reindex(
             columns=[ctx.bus], fill_value=0.0
         )
-        shedding = shedding[ctx.bus]
-        fig.add_traces(event_markers(model, shedding))
-    start, end = ctx.hours[[0, -1]]
-    fig.update_xaxes(range=[start, end])
+        fig.add_traces(event_markers(model, shedding[ctx.bus]))
     fig.update_layout(
         height=CHART_HEIGHT,
         hovermode="x unified",
@@ -59,44 +67,72 @@ def hourly_line(ctx: Context) -> go.Figure:
     return fig
 
 
-def period_series(ctx: Context) -> list[tuple[str, pd.Series, str]]:
-    """Observed, model and same-year comparison prices of the area in the period."""
-    series = [
-        ("observed", ctx.run.area_observed.loc[ctx.hours, ctx.area], OBSERVED_COLOR),
-        (ctx.run.name, ctx.run.area_model.loc[ctx.hours, ctx.area], MODEL_COLOR),
+def run_lines(
+    run: RunData, area: str, hours: pd.DatetimeIndex, dash: str = "solid"
+) -> list[Line]:
+    """Observed and model prices of a run in an area and hours."""
+    return [
+        Line(
+            f"observed {run.year}",
+            run.area_observed.loc[hours, area],
+            OBSERVED_COLOR,
+            dash,
+        ),
+        Line(run.name, run.area_model.loc[hours, area], MODEL_COLOR, dash),
     ]
+
+
+def period_lines(ctx: Context) -> list[Line]:
+    """Run A, the same-year comparison and the validation runs over the comparable period, dashed."""
+    lines = run_lines(ctx.run, ctx.area, ctx.hours)
     if ctx.same_year:
         second = ctx.compare.area_model(ctx.run.buses).loc[ctx.hours, ctx.area]
-        series.append((ctx.compare.name, second, SECOND_COLOR))
-    return series
+        lines.append(Line(ctx.compare.name, second, SECOND_COLOR))
+    for ref in ctx.references:
+        if ctx.area in ref.run.buses:
+            lines += run_lines(ref.run, ctx.area, ref.hours, "dash")
+    return lines
 
 
-def duration(series: list[tuple[str, pd.Series, str]]) -> None:
-    """Price duration curves with tail shares."""
+def duration_figure(lines: list[Line]) -> go.Figure:
+    """Price duration curves."""
     fig = go.Figure()
-    for name, prices, color in series:
-        curve = duration_curve(prices)
-        fig.add_scatter(x=curve.index, y=curve, name=name, line=dict(color=color))
+    for line in lines:
+        curve = duration_curve(line.prices)
+        fig.add_scatter(
+            x=curve.index,
+            y=curve,
+            name=line.name,
+            line=dict(color=line.color, dash=line.dash),
+        )
     fig.update_layout(
         xaxis_title="share of hours", yaxis_title="€/MWh", height=CHART_HEIGHT
     )
+    return fig
+
+
+def duration(lines: list[Line]) -> None:
+    """Price duration curves with tail shares."""
     left, right = st.columns([3, 1])
-    left.plotly_chart(fig, width="stretch")
-    shares = pd.DataFrame({name: tail_shares(prices) for name, prices, _ in series})
+    left.plotly_chart(duration_figure(lines), width="stretch")
+    shares = pd.DataFrame({line.name: tail_shares(line.prices) for line in lines})
     right.markdown("**Share of hours by price (€/MWh)**")
     right.dataframe(shares.style.format("{:.1%}"))
 
 
-def profiles(series: list[tuple[str, pd.Series, str]]) -> None:
+def profile_figures(lines: list[Line]) -> list[go.Figure]:
     """Mean price by CET hour in winter and summer."""
-    columns = st.columns(len(SEASONS))
-    for column, (season, months) in zip(columns, SEASONS.items()):
+    figures = []
+    for season, months in SEASONS.items():
         fig = go.Figure()
-        for name, prices, color in series:
-            selected = prices[prices.index.month.isin(months)]
+        for line in lines:
+            selected = line.prices[line.prices.index.month.isin(months)]
             profile = selected.groupby(cet_hour(selected.index)).mean()
             fig.add_scatter(
-                x=profile.index, y=profile, name=name, line=dict(color=color)
+                x=profile.index,
+                y=profile,
+                name=line.name,
+                line=dict(color=line.color, dash=line.dash),
             )
         fig.update_layout(
             title=season,
@@ -104,7 +140,8 @@ def profiles(series: list[tuple[str, pd.Series, str]]) -> None:
             yaxis_title="€/MWh",
             height=CHART_HEIGHT,
         )
-        column.plotly_chart(fig, width="stretch")
+        figures.append(fig)
+    return figures
 
 
 def density(model: pd.Series, observed: pd.Series) -> go.Figure:
@@ -131,45 +168,68 @@ def density(model: pd.Series, observed: pd.Series) -> go.Figure:
     return fig
 
 
-def lead(ctx: Context, series: list[tuple[str, pd.Series, str]]) -> str:
-    """Summarise the price fit of the area in the period and its rank among all areas."""
+def lead(ctx: Context, lines: list[Line]) -> str:
+    """Summarise the price fit of the area in the period, its rank among all areas and the worst hours."""
     metrics = ctx.metrics()
     row = metrics.loc[ctx.area]
     rank = int(metrics.mae.rank()[ctx.area])
-    (_, observed, _), (_, model, _) = series[:2]
+    observed, model = lines[0].prices, lines[1].prices
+    error = model - observed
+    first, last, peak = worst_hours(error.groupby(cet_hour(error.index)).mean())
     return (
         f"In {ctx.period}, **{ctx.area}** has MAE **{row.mae:.1f} €/MWh** "
         f"(rank {rank} of {len(metrics)}, 1 = best), Pearson r **{row.pearson_r:.2f}** "
-        f"and bias **{row.mean_bias:+.1f} €/MWh**. Mean price: observed {observed.mean():.1f}, "
+        f"and bias **{row.mean_bias:+.1f} €/MWh**; worst hours (CET) **{first}:00 to "
+        f"{last + 1}:00** ({peak:+.0f} €/MWh). Mean price: observed {observed.mean():.1f}, "
         f"model {model.mean():.1f} €/MWh. Hours at or below 0 €/MWh: observed "
         f"{(observed <= 0).mean():.1%}, model {(model <= 0).mean():.1%}."
     )
 
 
+def links(ctx: Context) -> list[tuple[str, dict[str, str]]]:
+    """Next steps from the zone: its dispatch, the error patterns and the validation runs."""
+    compare = [
+        (f"Compare with {ref.run.name}", dict(page="Compare runs", run_b=ref.run.name))
+        for ref in ctx.references
+    ]
+    return [
+        (f"Dispatch and flows for {ctx.area}", dict(page="Dispatch and flows")),
+        ("Error patterns", dict(page="Error patterns")),
+        *compare,
+    ]
+
+
 def render(ctx: Context) -> None:
     """Draw the zone detail page."""
-    series = period_series(ctx)
-    takeaway(lead(ctx, series))
+    lines = period_lines(ctx)
+    takeaway(lead(ctx, lines), links(ctx))
     st.plotly_chart(hourly_line(ctx), width="stretch")
+    notes = ["One day of context on each side of the period."]
     if ctx.compare is not None and not ctx.same_year:
-        st.caption(f"{ctx.compare.name} covers another year and is not overlaid.")
+        notes.append(f"{ctx.compare.name} covers another year and is not overlaid.")
+    if ctx.references:
+        notes.append(
+            "Dashed lines in the tabs: comparable period of the validation runs."
+        )
+    st.caption(" ".join(notes))
     tabs = st.tabs(
         [
             "Duration curve",
+            "Error by month and hour",
             "Daily profile",
             "Model vs observed",
-            "Error by month and hour",
         ]
     )
     with tabs[0]:
-        duration(series)
+        duration(lines)
     with tabs[1]:
-        profiles(series)
-    with tabs[2]:
-        st.plotly_chart(density(series[1][1], series[0][1]))
-    with tabs[3]:
         st.caption("Mean error model minus observed, €/MWh, whole year.")
         error = ctx.run.area_model[ctx.area] - ctx.run.area_observed[ctx.area]
         table = month_hour_errors(error, cet_hour(error.index))
         table = table.set_axis([MONTHS[m - 1] for m in table.index])
         st.plotly_chart(heatmap(table, "€/MWh"), width="stretch")
+    with tabs[2]:
+        for column, figure in zip(st.columns(len(SEASONS)), profile_figures(lines)):
+            column.plotly_chart(figure, width="stretch")
+    with tabs[3]:
+        st.plotly_chart(density(lines[1].prices, lines[0].prices))

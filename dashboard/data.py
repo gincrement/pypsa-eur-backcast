@@ -5,6 +5,7 @@
 Loaders of the dashboard extracts and research variants and pure derived frames.
 """
 
+import calendar
 import json
 import re
 from dataclasses import dataclass, field
@@ -24,14 +25,15 @@ ROOT = Path(__file__).parent.parent
 CACHE = Path(__file__).parent / "cache"
 VARIANTS = ROOT / "dev/day-ahead-backcast/phase3"
 DEFAULT_YEAR = 2023
-PRESETS = ["year", "month", "winter week", "summer week", "custom"]
+MONTH_NAMES = list(calendar.month_name)[1:]
+PERIODS = ["year", *MONTH_NAMES, "winter week", "summer week", "custom"]
 AGGREGATIONS = {"hourly": None, "daily": "D"}
 TOP_SHARE = 0.01
 KPIS = {
-    "median MAE (€/MWh)": ("mae", "median"),
-    "median MAE / mean price": ("rel_mae", "median"),
-    "median Pearson r": ("pearson_r", "median"),
-    "median |bias| (€/MWh)": ("abs_bias", "median"),
+    "MAE": ("mae", "median"),
+    "MAE / mean": ("rel_mae", "median"),
+    "r": ("pearson_r", "median"),
+    "|bias|": ("abs_bias", "median"),
 }
 
 
@@ -152,14 +154,13 @@ def period_index(
     index: pd.DatetimeIndex,
     preset: str,
     weeks: dict[str, pd.DatetimeIndex],
-    month: int = 1,
     dates: tuple[pd.Timestamp, pd.Timestamp] | None = None,
 ) -> pd.DatetimeIndex:
-    """Select the hours of a period preset."""
+    """Select the hours of a period preset: the year, a month by name, a week or custom dates."""
     if preset == "year":
         return index
-    if preset == "month":
-        return index[index.month == month]
+    if preset in MONTH_NAMES:
+        return index[index.month == MONTH_NAMES.index(preset) + 1]
     if preset in ("winter week", "summer week"):
         return index.intersection(weeks[preset.removesuffix(" week")])
     assert preset == "custom" and dates is not None, f"Unknown preset {preset}"
@@ -205,6 +206,18 @@ def level_errors(error: pd.DataFrame, observed: pd.DataFrame) -> pd.DataFrame:
 def month_hour_errors(error: pd.Series, hours: pd.Index) -> pd.DataFrame:
     """Mean error per month and hour of day."""
     return error.groupby([error.index.month, hours]).mean().unstack()
+
+
+def worst_hours(profile: pd.Series) -> tuple[int, int, float]:
+    """Contiguous hours around the largest mean error sharing its sign and half its size, with their mean."""
+    peak = profile.abs().idxmax()
+    strong = (profile * profile[peak] > 0) & (profile.abs() >= profile.abs()[peak] / 2)
+    first = last = peak
+    while first - 1 in strong.index and strong[first - 1]:
+        first -= 1
+    while last + 1 in strong.index and strong[last + 1]:
+        last += 1
+    return first, last, profile.loc[first:last].mean()
 
 
 def tail_shares(prices: pd.Series, levels: tuple[float, float] = (0.0, 150.0)) -> dict:

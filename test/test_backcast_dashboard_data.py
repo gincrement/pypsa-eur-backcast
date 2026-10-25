@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MIT
 """Tests for the backcast dashboard data layer, extract and app."""
 
+import shutil
 from pathlib import Path
 
 import geopandas as gpd
@@ -39,9 +40,9 @@ FILES = {
 }
 
 
-def solved_network() -> pypsa.Network:
+def solved_network(hours: pd.DatetimeIndex = HOURS) -> pypsa.Network:
     n = pypsa.Network()
-    n.set_snapshots(HOURS)
+    n.set_snapshots(hours)
     n.add("Bus", AREA_TO_BUS.index, carrier="AC")
     n.add("Link", "DE00->FR00", bus0="DE00", bus1="FR00", carrier="DC", p_nom=1.0)
     n.add(
@@ -53,28 +54,26 @@ def solved_network() -> pypsa.Network:
     )
     n.add("Load", ["DE00 load", "FR00 load"], bus=["DE00", "FR00"])
     n.add("StorageUnit", "FR00 hydro", bus="FR00", carrier="hydro")
-    day = np.tile(np.r_[np.full(12, 50.0), np.full(12, 10.5)], len(HOURS) // 24)
-    n.buses_t.marginal_price = pd.DataFrame({"DE00": day, "FR00": 10.0}, HOURS)
+    day = np.tile(np.r_[np.full(12, 50.0), np.full(12, 10.5)], len(hours) // 24)
+    n.buses_t.marginal_price = pd.DataFrame({"DE00": day, "FR00": 10.0}, hours)
     n.generators_t.p = pd.DataFrame(
         {"DE00 CCGT": 1.0, "DE00 solar": 2.0, "FR00 nuclear": 3.0, "FR00 load": 0.0},
-        HOURS,
+        hours,
     )
-    n.links_t.p0 = pd.DataFrame({"DE00->FR00": 1.0}, HOURS)
-    n.loads_t.p = pd.DataFrame({"DE00 load": 3.0, "FR00 load": 2.0}, HOURS)
-    n.storage_units_t.p = pd.DataFrame({"FR00 hydro": 1.0}, HOURS)
-    n.storage_units_t.state_of_charge = pd.DataFrame({"FR00 hydro": 5.0}, HOURS)
-    n.storage_units_t.inflow = pd.DataFrame({"FR00 hydro": 0.5}, HOURS)
+    n.links_t.p0 = pd.DataFrame({"DE00->FR00": 1.0}, hours)
+    n.loads_t.p = pd.DataFrame({"DE00 load": 3.0, "FR00 load": 2.0}, hours)
+    n.storage_units_t.p = pd.DataFrame({"FR00 hydro": 1.0}, hours)
+    n.storage_units_t.state_of_charge = pd.DataFrame({"FR00 hydro": 5.0}, hours)
+    n.storage_units_t.inflow = pd.DataFrame({"FR00 hydro": 0.5}, hours)
     return n
 
 
-@pytest.fixture(scope="module")
-def run_dir(tmp_path_factory) -> Path:
-    tmp = tmp_path_factory.mktemp("run")
-    n = solved_network()
-    observed = n.buses_t.marginal_price + np.sin(np.arange(len(HOURS)))[:, None]
+def write_run(tmp: Path, name: str, hours: pd.DatetimeIndex) -> Path:
+    n = solved_network(hours)
+    observed = n.buses_t.marginal_price + np.sin(np.arange(len(hours)))[:, None]
     model = n.buses_t.marginal_price
     entsoe = pd.DataFrame(
-        {("DE_LU", "gas"): 1.0, ("FR", "nuclear"): 3.0}, HOURS
+        {("DE_LU", "gas"): 1.0, ("FR", "nuclear"): 3.0}, hours
     ).rename_axis(columns=["area", "carrier"])
     paths = {
         "network": tmp / "network.nc",
@@ -90,8 +89,8 @@ def run_dir(tmp_path_factory) -> Path:
     n.export_to_netcdf(paths["network"])
     observed.to_csv(paths["prices"])
     entsoe.to_csv(paths["generation"])
-    pd.DataFrame({"DE_LU->FR": 2.0, "FR->DE_LU": 1.0}, HOURS).to_csv(paths["exchanges"])
-    pd.DataFrame({"DE00->FR00": 5.0, "FR00->DE00": 4.0}, HOURS).to_csv(
+    pd.DataFrame({"DE_LU->FR": 2.0, "FR->DE_LU": 1.0}, hours).to_csv(paths["exchanges"])
+    pd.DataFrame({"DE00->FR00": 5.0, "FR00->DE00": 4.0}, hours).to_csv(
         paths["capacities"]
     )
     regions = gpd.GeoDataFrame(
@@ -101,9 +100,24 @@ def run_dir(tmp_path_factory) -> Path:
     price_metrics(model, observed).to_csv(paths["metrics"])
     monthly_bias(model, observed).to_csv(paths["monthly_bias"])
     AREA_TO_BUS.rename_axis("bus").to_csv(paths["area_to_bus"])
-    out = tmp / "cache" / "test-run"
-    extract(paths, out, "test-run")
+    out = tmp / "cache" / name
+    extract(paths, out, name)
     return out
+
+
+@pytest.fixture(scope="module")
+def run_dir(tmp_path_factory) -> Path:
+    return write_run(tmp_path_factory.mktemp("run"), "test-run", HOURS)
+
+
+@pytest.fixture(scope="module")
+def validation_cache(tmp_path_factory, run_dir) -> Path:
+    tmp = tmp_path_factory.mktemp("validation")
+    write_run(
+        tmp, "test-run-2019", pd.date_range("2019-01-01", periods=len(HOURS), freq="h")
+    )
+    shutil.copytree(run_dir, tmp / "cache" / run_dir.name)
+    return tmp / "cache"
 
 
 def test_extract_writes_files_and_marginal_carriers(run_dir):
@@ -162,7 +176,7 @@ def test_stacked_generation_fills_carriers_in_gw():
     "preset, kwargs, hours",
     [
         ("year", {}, len(HOURS)),
-        ("month", {"month": 2}, 28 * 24),
+        ("February", {}, 28 * 24),
         ("winter week", {}, 168),
         ("custom", {"dates": (pd.Timestamp("2023-03-01"),) * 2}, 24),
     ],
@@ -175,6 +189,17 @@ def test_period_index_and_aggregate(preset, kwargs, hours, aggregation, factor):
 
     assert len(index) == hours
     assert len(data.aggregate(prices, aggregation)) == hours // factor
+
+
+@pytest.mark.parametrize(
+    "errors, expected",
+    [
+        ([0, 1, 5, 6, 4, 2, 0], (2, 4, 5.0)),
+        ([-1, -8, -2, 3, 0, 0, 0], (1, 1, -8.0)),
+    ],
+)
+def test_worst_hours_window(errors, expected):
+    assert data.worst_hours(pd.Series(errors, dtype=float)) == expected
 
 
 def test_discover_and_load_variants(tmp_path, run_dir):
@@ -213,39 +238,61 @@ def test_level_and_border_tables(run_dir):
     }
 
 
-@pytest.mark.slow
-@pytest.mark.parametrize("page", PAGES)
-def test_app_renders_pages_and_keeps_state(run_dir, monkeypatch, page):
+def app_test(cache: Path, monkeypatch, **params: str):
     streamlit = pytest.importorskip("streamlit")
     from streamlit.testing.v1 import AppTest
 
-    monkeypatch.setattr(data, "CACHE", run_dir.parent)
-    monkeypatch.setattr(data, "VARIANTS", run_dir.parent / "none")
+    monkeypatch.setattr(data, "CACHE", cache)
+    monkeypatch.setattr(data, "VARIANTS", cache / "none")
     streamlit.cache_data.clear()
     app = AppTest.from_file(
         str(Path(data.__file__).parent / "app.py"), default_timeout=60
     )
-    app.query_params.update(page=page, area="FR", period="month", month="3")
-    app.run()
+    app.query_params.update(params)
+    return app.run()
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("page", PAGES)
+def test_app_renders_pages_and_keeps_state(run_dir, monkeypatch, page):
+    app = app_test(run_dir.parent, monkeypatch, page=page, area="FR", period="March")
 
     assert not app.exception
-    assert app.session_state["area"] == "FR" and app.session_state["month"] == 3
+    assert app.session_state["area"] == "FR" and app.session_state["period"] == "March"
     assert app.query_params["area"] == "FR"
 
 
 @pytest.mark.slow
-def test_report_page_fills_results_and_limitations(run_dir, monkeypatch):
-    streamlit = pytest.importorskip("streamlit")
-    from streamlit.testing.v1 import AppTest
-
-    monkeypatch.setattr(data, "CACHE", run_dir.parent)
-    monkeypatch.setattr(data, "VARIANTS", run_dir.parent / "none")
-    streamlit.cache_data.clear()
-    app = AppTest.from_file(
-        str(Path(data.__file__).parent / "app.py"), default_timeout=60
+def test_overview_scores_validation_run_over_same_period(validation_cache, monkeypatch):
+    app = app_test(
+        validation_cache, monkeypatch, page="Overview", run_a="test-run", period="March"
     )
-    app.query_params.update(page="Report")
-    app.run()
+
+    text = " ".join(m.value for m in app.markdown)
+    assert not app.exception
+    assert "Validation, March 2019" in text
+    assert "validation test-run-2019, March 2019" in text
+
+
+@pytest.mark.slow
+def test_zone_link_opens_dispatch_and_hidden_state_survives(run_dir, monkeypatch):
+    app = app_test(
+        run_dir.parent, monkeypatch, page="Zone detail", area="FR", agg="daily"
+    )
+    app.button(key="link_Dispatch and flows for FR").click().run()
+    shown = [s.label for s in app.selectbox]
+    app.radio(key="page").set_value("Report").run()
+    hidden = len(app.selectbox)
+    app.radio(key="page").set_value("Zone detail").run()
+
+    assert not app.exception
+    assert shown == ["Run A", "Bidding zone", "Period"] and hidden == 0
+    assert app.session_state["area"] == "FR" and app.session_state["agg"] == "daily"
+
+
+@pytest.mark.slow
+def test_report_page_fills_results_and_limitations(run_dir, monkeypatch):
+    app = app_test(run_dir.parent, monkeypatch, page="Report")
 
     text = " ".join(m.value for m in app.markdown)
     assert not app.exception

@@ -17,7 +17,6 @@ DEFAULTS: dict[str, Any] = {
     "run_b": "",
     "area": "DE_LU",
     "period": "year",
-    "month": 1,
     "start": "",
     "end": "",
     "agg": "auto",
@@ -31,13 +30,14 @@ def parse(key: str, value: str) -> Any:
 
 
 def init_state() -> None:
-    """Fill the session state from the query parameters or defaults once and apply requested updates."""
+    """Fill the session state from the query parameters or defaults once, keep the state of hidden widgets and apply requested updates."""
+    params = st.query_params
     for key, default in DEFAULTS.items():
         if key not in st.session_state:
-            params = st.query_params
             st.session_state[key] = (
                 parse(key, params[key]) if key in params else default
             )
+        st.session_state[key] = st.session_state[key]
     st.session_state.update(st.session_state.pop(PENDING, {}))
 
 
@@ -53,8 +53,8 @@ def sync_query_params() -> None:
     st.query_params.from_dict({k: str(v) for k, v in state.items() if v != DEFAULTS[k]})
 
 
-def follow_selection(key: str, selection: tuple | None, **updates: Any) -> None:
-    """Apply the updates once when the selection of a chart or table changes."""
+def follow_selection(key: str, selection: Any, **updates: Any) -> None:
+    """Apply the updates once when the selection of a chart changes to a new value, None clears it."""
     last = f"_selection_{key}"
     if selection == st.session_state.get(last):
         return

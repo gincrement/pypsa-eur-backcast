@@ -30,6 +30,7 @@ from scripts.lib.backcast_plotting import (
 SOURCES = {"model": MODEL_COLOR, "entsoe": OBSERVED_COLOR}
 UNMATCHED = "none"
 UNMATCHED_LABEL = "no local carrier"
+CLIP_QUANTILES = (0.01, 0.99)
 
 
 def nice_step(span: float, ticks: int = 5) -> float:
@@ -48,8 +49,28 @@ def zero_aligned(
     return [-share / (1 - share) * top, top], [low, high]
 
 
+def clipped_markers(
+    price: pd.Series, low: float, high: float, color: str
+) -> go.Scatter:
+    """Markers at the axis edge for prices outside the price axis, hovering the true value."""
+    outside = (price < low) | (price > high)
+    return go.Scatter(
+        x=price.index[outside],
+        y=price.clip(low, high)[outside],
+        mode="markers",
+        marker=dict(
+            color=color,
+            size=7,
+            symbol=np.where(price[outside] > high, "triangle-up", "triangle-down"),
+        ),
+        customdata=price[outside],
+        hovertemplate="%{customdata:.1f} €/MWh (off axis)",
+        showlegend=False,
+    )
+
+
 def generation_stacks(ctx: Context) -> go.Figure:
-    """Stacked generation of model and ENTSO-E with the price on a secondary axis."""
+    """Stacked generation of model and ENTSO-E with the price on a secondary axis clipped to its 1st and 99th percentile."""
     fig = make_subplots(
         2,
         1,
@@ -65,6 +86,8 @@ def generation_stacks(ctx: Context) -> go.Figure:
             for p in prices.values()
         ]
     )
+    low, high = both.quantile(CLIP_QUANTILES)
+    low, high = min(low, 0.0), max(high, 0.0)
     for row, (source, color) in enumerate(SOURCES.items(), start=1):
         stack = stacked_generation(
             source_generation(ctx.run.generation, source, ctx.area), ctx.hours
@@ -97,9 +120,10 @@ def generation_stacks(ctx: Context) -> go.Figure:
             col=1,
             secondary_y=True,
         )
-        gw, price = zero_aligned(
-            max(stack.sum(axis=1).max(), 1.0), both.min(), both.max()
+        fig.add_trace(
+            clipped_markers(price, low, high, color), row=row, col=1, secondary_y=True
         )
+        gw, price = zero_aligned(max(stack.sum(axis=1).max(), 1.0), low, high)
         fig.update_yaxes(
             title_text="GW",
             range=gw,
@@ -235,7 +259,10 @@ def render(ctx: Context) -> None:
     shares = marginal_shares(ctx.run.marginal[ctx.bus].loc[ctx.hours])
     positions = border_positions(ctx.run.flows, ctx.area, ctx.hours)
     energy = net_exports(positions) if not positions.empty else pd.DataFrame()
-    takeaway(lead(ctx, table, shares, energy))
+    takeaway(
+        lead(ctx, table, shares, energy),
+        [(f"Back to zone detail: {ctx.area}", dict(page="Zone detail"))],
+    )
     st.subheader("Generation and price")
     st.caption(f"GW per carrier and price in €/MWh, {ctx.period}, {ctx.aggregation}.")
     st.plotly_chart(generation_stacks(ctx), width="stretch")
