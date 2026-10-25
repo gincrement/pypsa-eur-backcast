@@ -14,7 +14,16 @@ import yaml
 
 from dashboard import data
 from dashboard.state import DEFAULTS, init_state, sync_query_params
-from dashboard.views import PAGES, QUESTIONS, compare, dispatch, errors, overview, zone
+from dashboard.views import (
+    PAGES,
+    QUESTIONS,
+    compare,
+    dispatch,
+    errors,
+    overview,
+    report,
+    zone,
+)
 from dashboard.views.common import Context, Reference
 from scripts.lib.backcast_plotting import STACK, group_colors
 
@@ -22,7 +31,14 @@ AUTO_DAILY_HOURS = 24 * 62
 RENDER: dict[str, Callable[[Context], None]] = dict(
     zip(
         PAGES,
-        [overview.render, errors.render, zone.render, dispatch.render, compare.render],
+        [
+            report.render,
+            overview.render,
+            errors.render,
+            zone.render,
+            dispatch.render,
+            compare.render,
+        ],
     )
 )
 

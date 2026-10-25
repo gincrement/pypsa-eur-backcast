@@ -4,6 +4,7 @@
 """Pages of the backcast dashboard in story order with the question each answers."""
 
 QUESTIONS = {
+    "Report": "How does the backcast work, how good is it and where does it fall short?",
     "Overview": "How good is the backcast, and in which bidding zones does it fail?",
     "Error patterns": "When does it fail: in which months, hours and price levels?",
     "Zone detail": "How do modelled and observed prices compare in {area}?",

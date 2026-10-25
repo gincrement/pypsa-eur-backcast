@@ -231,3 +231,24 @@ def test_app_renders_pages_and_keeps_state(run_dir, monkeypatch, page):
     assert not app.exception
     assert app.session_state["area"] == "FR" and app.session_state["month"] == 3
     assert app.query_params["area"] == "FR"
+
+
+@pytest.mark.slow
+def test_report_page_fills_results_and_limitations(run_dir, monkeypatch):
+    streamlit = pytest.importorskip("streamlit")
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setattr(data, "CACHE", run_dir.parent)
+    monkeypatch.setattr(data, "VARIANTS", run_dir.parent / "none")
+    streamlit.cache_data.clear()
+    app = AppTest.from_file(
+        str(Path(data.__file__).parent / "app.py"), default_timeout=60
+    )
+    app.query_params.update(page="Report")
+    app.run()
+
+    text = " ".join(m.value for m in app.markdown)
+    assert not app.exception
+    assert [h.value for h in app.subheader][-1] == "Refinement history"
+    assert app.table[0].value.columns.tolist() == ["test-run"]
+    assert "{" not in text and "test-run" in text
