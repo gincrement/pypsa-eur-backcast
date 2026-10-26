@@ -29,7 +29,7 @@
     * New rule `evaluate_price_backcast` (`scripts/evaluate_price_backcast.py`) writes bias, MAE, RMSE (also clipped), correlation, standard deviation ratio, shares of zero and negative prices and monthly bias per bus.
     * New rule `backcast_figures` (`scripts/plot_backcast_{prices,errors,system}.py`, `scripts/lib/backcast_plotting.py`) with data transforms in `scripts/lib/backcast_data.py`.
   * Dashboard:
-    * Streamlit app in `dashboard/` with a run extract (`dashboard/extract.py`) and pages on method, results, errors, zones, dispatch and limitations.
+    * Streamlit app in `dashboard/` with a run extract (`dashboard/extract.py`) and pages for the overview, single bidding zones, cross-border flows and limitations.
     * New pixi environment `dashboard` with tasks `backcast-extract` and `backcast-dashboard`.
   * Fixes:
     * Correct the CH 2023 load gap-filling end dates in `scripts/build_electricity_demand.py`, which shifted the CH load by one day.
