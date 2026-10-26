@@ -50,7 +50,7 @@ The results are published as an interactive dashboard at <https://pypsa-eur-back
 It compares modelled prices, dispatch and cross-border exchanges with ENTSO-E data per bidding zone.
 The pages are Overview, Bidding zone, Cross border flows and Limitations.
 
-The app (`dashboard/app.py`) runs on Streamlit Community Cloud from the branch `feat/day-ahead-backcast`.
+The app (`dashboard/app.py`) runs on Streamlit Community Cloud from the branch `master`.
 Code changes pushed to that branch are deployed automatically.
 The app installs only `dashboard/requirements.txt`, so code under `dashboard/` must not import the full PyPSA-Eur stack (pypsa, atlite, snakemake, `scripts/_helpers.py`).
 
