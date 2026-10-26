@@ -5,15 +5,87 @@
 Data transforms of the day-ahead price backcast shared by the static figures and the dashboard.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import numpy as np
 import pandas as pd
-import pypsa
 
 from scripts.lib.backcast_plotting import CARRIER_GROUPS, STACK, cet_hour
+
+if TYPE_CHECKING:
+    import pypsa
 
 MIN_COVERAGE = 0.95
 MARGINAL_TOLERANCE = 1.0
 NO_MARGINAL = "none"
+CLIP_PRICE_RANGE = (-100.0, 500.0)
+ZERO_PRICE_TOLERANCE = 0.01
+
+
+def align_prices(
+    model: pd.DataFrame, observed: pd.DataFrame
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Restrict both prices to common hours and observed buses, masking hours without observed price."""
+    assert model.index.tz is None and observed.index.tz is None, (
+        "Prices must have naive UTC timestamps"
+    )
+    missing = observed.columns.difference(model.columns)
+    assert missing.empty, f"Observed buses missing in model: {missing.tolist()}"
+    hours = model.index.intersection(observed.index)
+    assert not hours.empty, "Modelled and observed prices share no hours"
+    observed = observed.loc[hours]
+    model = model.loc[hours, observed.columns].where(observed.notna())
+    return model, observed
+
+
+def share(mask: pd.DataFrame, prices: pd.DataFrame) -> pd.Series:
+    """Share of hours with valid price fulfilling the mask."""
+    return mask.astype(float).where(prices.notna()).mean()
+
+
+def rmse(model: pd.DataFrame, observed: pd.DataFrame) -> pd.Series:
+    """Root mean squared error per bus."""
+    return np.sqrt(((model - observed) ** 2).mean())
+
+
+def price_metrics(model: pd.DataFrame, observed: pd.DataFrame) -> pd.DataFrame:
+    """Compute error metrics and zero and negative price shares per bus."""
+    error = model - observed
+    metrics = {
+        "mean_bias": error.mean(),
+        "mae": error.abs().mean(),
+        "rmse": rmse(model, observed),
+        "rmse_clipped": rmse(
+            model.clip(*CLIP_PRICE_RANGE), observed.clip(*CLIP_PRICE_RANGE)
+        ),
+        "pearson_r": model.corrwith(observed),
+        "std_ratio": model.std() / observed.std(),
+        "mean_observed": observed.mean(),
+        "mean_model": model.mean(),
+        "std_observed": observed.std(),
+    }
+    for name, prices in {"model": model, "observed": observed}.items():
+        metrics[f"zero_share_{name}"] = share(
+            prices.abs() <= ZERO_PRICE_TOLERANCE, prices
+        )
+        metrics[f"negative_share_{name}"] = share(
+            prices < -ZERO_PRICE_TOLERANCE, prices
+        )
+    return pd.DataFrame(metrics).rename_axis("bus")
+
+
+def monthly_bias(model: pd.DataFrame, observed: pd.DataFrame) -> pd.DataFrame:
+    """Compute the mean bias per year-month and bus."""
+    error = model - observed
+    return error.groupby(error.index.to_period("M")).mean().rename_axis("month")
+
+
+def duration_curve(prices: pd.Series) -> pd.Series:
+    """Sort prices descending over the share of hours."""
+    values = prices.dropna().sort_values(ascending=False).to_numpy()
+    return pd.Series(values, index=np.arange(1, len(values) + 1) / len(values))
 
 
 def monthly_mae(error: pd.DataFrame) -> pd.DataFrame:

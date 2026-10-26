@@ -5,18 +5,22 @@
 Shared style, zone conventions and data helpers for the day-ahead price backcast figures.
 """
 
+from __future__ import annotations
+
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TypeVar
+from typing import TYPE_CHECKING, TypeVar
 
-import geopandas as gpd
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import pypsa
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
+
+if TYPE_CHECKING:
+    import geopandas as gpd
+    import pypsa
 
 T = TypeVar("T")
 

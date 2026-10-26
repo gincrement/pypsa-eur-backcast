@@ -7,13 +7,19 @@ Loaders of the dashboard extracts and pure derived frames.
 
 import calendar
 import json
+import tarfile
+import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import pandas as pd
 
-from scripts.evaluate_price_backcast import price_metrics
-from scripts.lib.backcast_data import decile_errors, monthly_mae, top_errors
+from scripts.lib.backcast_data import (
+    decile_errors,
+    monthly_mae,
+    price_metrics,
+    top_errors,
+)
 from scripts.lib.backcast_plotting import (
     area_prices,
     representative_buses,
@@ -22,6 +28,8 @@ from scripts.lib.backcast_plotting import (
 
 ROOT = Path(__file__).parent.parent
 CACHE = Path(__file__).parent / "cache"
+DATA_URL = "https://github.com/open-energy-transition/pypsa-eur-backcast/releases/download/dashboard-data/dashboard-cache.tar.gz"
+FETCH_MARKER = "SOURCE"
 MONTH_NAMES = list(calendar.month_name)[1:]
 PERIODS = ["year", *MONTH_NAMES, "winter week", "summer week", "custom"]
 AGGREGATIONS = {"hourly": None, "daily": "D"}
@@ -101,6 +109,14 @@ def load_run(path: Path) -> RunData:
 def discover_runs(cache: Path) -> list[str]:
     """List the runs with an extract in the cache."""
     return sorted(p.parent.name for p in cache.glob("*/manifest.json"))
+
+
+def fetch_cache(cache: Path, url: str = DATA_URL) -> None:
+    """Download the packed extracts, unpack them into the cache and mark it as fetched."""
+    with urllib.request.urlopen(url) as response:
+        with tarfile.open(fileobj=response, mode="r|gz") as archive:
+            archive.extractall(cache, filter="data")
+    (cache / FETCH_MARKER).write_text(url)
 
 
 def stale_sources(manifest: dict) -> list[str]:

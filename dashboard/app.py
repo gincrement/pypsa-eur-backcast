@@ -5,6 +5,11 @@
 Streamlit app to explore the day-ahead price backcast: ``pixi run -e dashboard backcast-dashboard``.
 """
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from collections.abc import Callable
 from datetime import date
 
@@ -140,7 +145,8 @@ def sidebar(runs: list[str]) -> Context:
         bar.segmented_control(
             "Time series resolution", ["auto", *data.AGGREGATIONS], key="agg"
         )
-    stale = data.stale_sources(run.manifest)
+    fetched = (data.CACHE / data.FETCH_MARKER).exists()
+    stale = [] if fetched else data.stale_sources(run.manifest)
     if stale:
         bar.warning(
             f"Extract is older than {len(stale)} of its sources, rerun backcast-extract"
@@ -175,6 +181,10 @@ def selection(ctx: Context, controls: list[str]) -> str:
 st.set_page_config(page_title="Backcast dashboard", layout="wide")
 init_state()
 runs = data.discover_runs(data.CACHE)
+if not runs:
+    with st.spinner("Downloading the backcast extracts"):
+        data.fetch_cache(data.CACHE)
+    runs = data.discover_runs(data.CACHE)
 if not runs:
     st.error(
         f"No extracts in {data.CACHE}, run `pixi run -e dashboard backcast-extract results/<run>`"

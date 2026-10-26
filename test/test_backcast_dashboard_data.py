@@ -4,6 +4,7 @@
 """Tests for the backcast dashboard data layer, extract and app."""
 
 import shutil
+import tarfile
 from pathlib import Path
 
 import geopandas as gpd
@@ -16,12 +17,13 @@ from shapely.geometry import box
 from dashboard import data
 from dashboard.extract import extract
 from dashboard.views import PAGES
-from scripts.evaluate_price_backcast import monthly_bias, price_metrics
 from scripts.lib.backcast_data import (
     NO_MARGINAL,
     area_capacities,
     marginal_carriers,
+    monthly_bias,
     monthly_mae,
+    price_metrics,
     stacked_generation,
     top_errors,
 )
@@ -130,6 +132,17 @@ def test_extract_writes_files_and_marginal_carriers(run_dir):
     assert run.marginal["DE00"].iloc[:13].tolist() == [*["gas"] * 12, "nuclear"]
     assert set(run.marginal["FR00"]) == {"nuclear"}
     assert run.year == 2023 and data.stale_sources(run.manifest) == []
+
+
+def test_fetch_cache_unpacks_runs_and_marks_source(run_dir, tmp_path):
+    archive = tmp_path / "dashboard-cache.tar.gz"
+    with tarfile.open(archive, "w:gz") as tar:
+        tar.add(run_dir, arcname=run_dir.name)
+    cache = tmp_path / "cache"
+    data.fetch_cache(cache, archive.as_uri())
+
+    assert data.discover_runs(cache) == [run_dir.name]
+    assert (cache / data.FETCH_MARKER).read_text() == archive.as_uri()
 
 
 @pytest.mark.parametrize(

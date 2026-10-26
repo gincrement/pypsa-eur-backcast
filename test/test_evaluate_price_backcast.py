@@ -8,12 +8,11 @@ import pandas as pd
 import pytest
 from matplotlib.backends.backend_pdf import PdfPages
 
-from scripts.evaluate_price_backcast import (
-    PLOTS,
+from scripts.evaluate_price_backcast import PLOTS, plot_page
+from scripts.lib.backcast_data import (
     align_prices,
     duration_curve,
     monthly_bias,
-    plot_page,
     price_metrics,
 )
 

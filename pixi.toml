@@ -202,7 +202,8 @@ pytest = ">=8.4.2"
 
 [feature.dashboard.tasks]
 backcast-extract = { cmd = "python -m dashboard.extract {{ run }}", args = ["run"] }
-backcast-dashboard = { cmd = "streamlit run dashboard/app.py", env = { PYTHONPATH = "." } }
+backcast-dashboard = "streamlit run dashboard/app.py"
+backcast-pack = "tar -czf dashboard-cache.tar.gz --exclude SOURCE -C dashboard/cache ."
 
 [feature.dashboard.dependencies]
 streamlit = ">=1.40"

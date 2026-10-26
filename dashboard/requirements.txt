@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: Contributors to PyPSA-Eur <https://github.com/pypsa/pypsa-eur>
+#
+# SPDX-License-Identifier: CC0-1.0
+
+streamlit>=1.66
+plotly>=7.1
+pandas>=3.0
+numpy>=2.5
+pyarrow>=24.0
+pyyaml>=6.0
+matplotlib>=3.11

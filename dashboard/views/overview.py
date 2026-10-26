@@ -15,7 +15,7 @@ from dashboard.data import KPIS, kpis
 from dashboard.state import follow_selection
 from dashboard.views import errors, method
 from dashboard.views.common import Context, show, takeaway, worst, zone_layout
-from scripts.evaluate_price_backcast import price_metrics
+from scripts.lib.backcast_data import price_metrics
 from scripts.lib.backcast_plotting import (
     BAND_COLOR,
     DIVERGING,

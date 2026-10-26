@@ -25,9 +25,9 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 
 from scripts._helpers import configure_logging, set_scenario_config
-from scripts.evaluate_price_backcast import align_prices
 from scripts.lib.backcast_data import (
     MIN_COVERAGE,
+    align_prices,
     net_exchanges,
     stacked_generation,
 )

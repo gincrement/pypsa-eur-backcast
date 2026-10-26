@@ -29,7 +29,7 @@ from dashboard.views.common import (
     takeaway,
 )
 from dashboard.views.dispatch import dispatch_lead, dispatch_sections
-from scripts.evaluate_price_backcast import duration_curve
+from scripts.lib.backcast_data import duration_curve
 from scripts.lib.backcast_plotting import (
     DENSITY,
     MODEL_COLOR,
