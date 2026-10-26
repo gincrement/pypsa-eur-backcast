@@ -44,6 +44,29 @@ pixi run -e dashboard backcast-dashboard                       # streamlit run d
 - Solver: Gurobi. The marginal cost spread makes the problem a QP (optimisation with a squared cost term).
 - Outputs: `results/backcast-<year>/backcast/{price_metrics.csv, price_monthly_bias.csv, price_evaluation.pdf, figures/}`.
 
+## Dashboard
+
+The results are published as an interactive dashboard at <https://pypsa-eur-backcast.streamlit.app/>.
+It compares modelled prices, dispatch and cross-border exchanges with ENTSO-E data per bidding zone.
+The pages are Overview, Bidding zone, Cross border flows and Limitations.
+
+The app (`dashboard/app.py`) runs on Streamlit Community Cloud from the branch `feat/day-ahead-backcast`.
+Code changes pushed to that branch are deployed automatically.
+The app installs only `dashboard/requirements.txt`, so code under `dashboard/` must not import the full PyPSA-Eur stack (pypsa, atlite, snakemake, `scripts/_helpers.py`).
+
+The data is not in git. On first start the app downloads `dashboard-cache.tar.gz` from the release
+[`dashboard-data`](https://github.com/open-energy-transition/pypsa-eur-backcast/releases/tag/dashboard-data) into `dashboard/cache/`.
+To update the data after new runs:
+
+```bash
+pixi run -e dashboard backcast-extract results/backcast-2023   # repeat for every run to publish
+pixi run -e dashboard backcast-pack                            # writes dashboard-cache.tar.gz from dashboard/cache
+gh release upload dashboard-data dashboard-cache.tar.gz --clobber -R open-energy-transition/pypsa-eur-backcast
+```
+
+Then reboot the app in the Streamlit Community Cloud settings: a running app keeps its downloaded data.
+Every run in `dashboard/cache/` is published, so remove local runs you do not want to share before packing.
+
 ## Known limitations and open items
 
 - Price spikes are too low. Dispatch in the observed top 5 % hours matches; the gap is a bid markup that a cost-based model cannot produce.
