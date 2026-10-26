@@ -31,10 +31,9 @@ The changes against PyPSA-Eur are listed in the release notes (`doc/release_note
 
 ```bash
 # ENTSOE_API_TOKEN must be set (retrieval rules fail fast without it)
-snakemake results/backcast-2023/backcast/price_metrics.csv backcast_figures -j8 \
-  --configfile config/backcast/config.backcast-2023.yaml --resources entsoe=2
-snakemake results/backcast-2019/backcast/price_metrics.csv backcast_figures -j8 \
-  --configfile config/backcast/config.backcast-2019.yaml --resources entsoe=2
+pixi run backcast 2023                                         # snakemake metrics and figures, -j8 --resources entsoe=2
+pixi run backcast 2019
+pixi run backcast 2023 "-n --rerun-triggers mtime"             # extra snakemake arguments as one quoted string
 pixi run -e dashboard backcast-extract results/backcast-2023   # writes dashboard/cache/backcast-2023
 pixi run -e dashboard backcast-dashboard                       # streamlit run dashboard/app.py
 ```
