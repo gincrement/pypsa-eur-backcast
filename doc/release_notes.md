@@ -6,6 +6,36 @@
 <!-- Upcoming Release -->
 <!-- ================= -->
 
+* Feature: Day-ahead price backcast for Europe (work in progress). The model runs one bus per bidding zone with NTC links and a fixed historical fleet, and scores the bus marginal prices against ENTSO-E day-ahead prices for 2023 and 2019 (`config/backcast/config.backcast-{2023,2019,2019-plain}.yaml`).
+  * New inputs:
+    * ENTSO-E day-ahead prices: new rules with `scripts/retrieve_day_ahead_prices_entsoe.py` and `scripts/build_day_ahead_prices.py`, area mapping in `data/entsoe_area_to_bus.csv`, new options `backcast: area_to_bus`, `backcast: max_price_gap_hours` and `backcast: exclude_price_areas`. Prices are converted from CET to UTC and mapped many-to-one (e.g. `DE_LU` to DE00 and LUG1, `IE_SEM` to IE00 and GBNI). Non-EUR prices raise an error.
+    * Cross-border capacities: `scripts/retrieve_cross_border_capacities_entsoe.py`, `scripts/build_cross_border_capacities.py`, `scripts/lib/cross_border.py`, `scripts/lib/timeseries.py` and `data/entsoe_borders.csv`. Each direction uses the first source with data: NTC, offered capacity, then the monthly maximum of the scheduled exchange. New options `electricity: cross_border_capacities: ntc`, `backcast: max_capacity_gap_hours` (default 48), `backcast: exchange_proxy_borders` and `backcast: fixed_border_capacities`.
+    * Nominal fuel prices: new option `conventional: fuel_price_nominal` skips the deflation in `scripts/build_monthly_prices.py`.
+    * ENTSO-E actual generation: `scripts/retrieve_actual_generation_entsoe.py` and `scripts/build_entsoe_generation.py`, including hourly generation and scheduled exchange outputs.
+  * Network building:
+    * Bidding-zone shapes: `scripts/base_network.py` builds the administrative shapes for `clustering: administrative: level: bz` from the zone polygons instead of a NUTS3 majority vote. This moves Ringhals and Oskarshamn (3.7 GW nuclear) from SE04 to SE03.
+    * NTC links: every inter-zone line and DC link is replaced by one link per border with hourly limits (`apply_cross_border_capacities`).
+    * Hybrid Core capacities: new option `backcast: hybrid_capacities` with `physical_factor` (0.49), `dc_physical_factor` (0.7), `sources` and the Core areas. Proxy directions get the maximum of the proxy and the factor times the thermal capacity.
+  * Model refinements (`scripts/compose_network.py`, `scripts/lib/backcast_calibration.py`, `scripts/lib/conventional.py`):
+    * Wind and nuclear calibration: wind `p_max_pu` is scaled to the ENTSO-E energy with curtailment added back (`backcast: calibrate_wind`, `wind_calibration_exclude`, `wind_calibration_factor_bounds`, `wind_curtailment_twh`). Nuclear gets a monthly availability (`backcast: monthly_nuclear_availability`, `backcast: nuclear_phase_out`). Also a lignite fuel cost (`config/backcast/custom_costs.backcast-2023.csv`) and new option `renewable: hydro: flatten_dispatch`.
+    * Must-run: `p_min_pu` of 0.3 for nuclear, lignite and biomass and 0.5 for waste. `p_min_pu` is clipped to the time-varying `p_max_pu` when composing the network.
+    * Marginal cost spread: new option `conventional: marginal_cost_spread` (spread, utilisation, carriers, `exclude_areas`) lets the marginal cost of thermal generators rise linearly with output. With `reference: observed`, the slope follows the observed ENTSO-E peak per area and carrier group, and the utilisation the observed mean over peak. This adds a quadratic cost term.
+    * Iberian gas cap: new option `conventional: gas_price_cap` caps the gas price per country (ES and PT in 2023).
+    * Wind targets: new option `backcast: wind_target_twh` calibrates areas without ENTSO-E wind data to given energies (GB from DESNZ and DUKES). Wind carriers an area does not publish are set to zero availability (e.g. offshore wind in `IE_SEM`). The area map is configurable for the pre-2021 Italian zones.
+    * 2019 configuration: same year-independent settings with cited 2019 targets (DUKES GB wind, BNetzA DE curtailment).
+    * PHS cap: new option `renewable: hydro: PHS_max_hours_cap: geth2015` caps the storage hours of pumped hydro at the country values of Geth et al. (2015) in `data/geth2015_hydro_capacities.csv`.
+    * NL CCGT data fix: corrected rows for the Dutch CCGTs at Eemshaven (Magnum), Maasbracht, Eemscentrale and Velsen in `data/custom_powerplants.csv`, with the originals dropped via `electricity: powerplants_filter`.
+  * Evaluation and figures:
+    * New rule `evaluate_price_backcast` (`scripts/evaluate_price_backcast.py`) writes bias, MAE, RMSE (also clipped), correlation, standard deviation ratio, shares of zero and negative prices and monthly bias per bus.
+    * New rule `backcast_figures` (`scripts/plot_backcast_{prices,errors,system}.py`, `scripts/lib/backcast_plotting.py`) with data transforms in `scripts/lib/backcast_data.py`.
+  * Dashboard:
+    * Streamlit app in `dashboard/` with a run extract (`dashboard/extract.py`) and pages on method, results, errors, zones, dispatch and limitations.
+    * New pixi environment `dashboard` with tasks `backcast-extract` and `backcast-dashboard`.
+  * Fixes:
+    * Correct the CH 2023 load gap-filling end dates in `scripts/build_electricity_demand.py`, which shifted the CH load by one day.
+    * Handle networks without stores in the TES energy-to-power ratio constraints in `scripts/solve_network.py`.
+    * Exclude Corsica (FR15) from the observed day-ahead prices.
+
 * Feature: New option `conventional: marginal_cost_spread` lets the marginal cost of thermal generators rise linearly with their output (quadratic cost), and new option `backcast: hybrid_capacities: dc_physical_factor` sets the share of the DC link capacity separately from `physical_factor` for lines. Minimum generation `p_min_pu` of generators is now clipped to their time-varying `p_max_pu` when composing the network. The 2023 backcast uses must-run levels for nuclear, lignite, biomass and waste, the marginal cost spread and the hybrid Core capacities.
 
 * Feature: New option `backcast: wind_target_twh` calibrates the wind availability of bidding zones without ENTSO-E generation data to given energies, and new option `conventional: gas_price_cap` caps the gas price of gas-fired generators per country, e.g. for the Iberian exception. `backcast: calibrate_wind` now sets wind carriers without actual generation in bidding zones with published generation to zero availability, e.g. the offshore wind in Northern Ireland under `IE_SEM`. The 2023 backcast calibrates GB wind to DESNZ statistics and DK_2 onshore wind, caps the Iberian gas price and uses a marginal cost spread of 0.45.

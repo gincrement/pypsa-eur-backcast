@@ -3,6 +3,65 @@ SPDX-FileCopyrightText: Contributors to PyPSA-Eur <https://github.com/pypsa/pyps
 SPDX-License-Identifier: CC-BY-4.0
 -->
 
+# PyPSA-Eur Backcast: day-ahead electricity prices for Europe
+
+> [!WARNING]
+> Work in progress. This fork of [PyPSA-Eur](https://github.com/PyPSA/pypsa-eur) is under active development.
+> Configs, results and interfaces may change without notice. The original PyPSA-Eur README follows below.
+
+## Target
+
+This project backcasts hourly day-ahead electricity prices for Europe with PyPSA-Eur.
+The model has one bus per bidding zone, and zones trade over NTC links (net transfer capacities published by ENTSO-E).
+All capacities are fixed to the historical fleet, so the model only optimises dispatch.
+The model price is the marginal price of each bus, scored against ENTSO-E day-ahead prices.
+2023 is the main year and 2019 the validation year.
+A refinement is kept only if it lowers the median MAE (mean absolute error) in both years.
+
+Median over scored model buses, EUR/MWh (43 buses in 2023, 40 in 2019):
+
+| run | 2023 MAE / r / abs bias | 2019 MAE / r / abs bias |
+|---|---|---|
+| baseline (2019: plain config) | 28.5 / 0.61 / 12.3 | 9.93 / 0.567 / 4.17 |
+| current | 21.03 / 0.752 / 6.72 | 7.88 / 0.707 / 4.88 |
+
+The changes against PyPSA-Eur are listed in the release notes (`doc/release_notes.md`).
+
+## How to run
+
+```bash
+# ENTSOE_API_TOKEN must be set (retrieval rules fail fast without it)
+snakemake results/backcast-2023/backcast/price_metrics.csv backcast_figures -j8 \
+  --configfile config/backcast/config.backcast-2023.yaml --resources entsoe=2
+snakemake results/backcast-2019/backcast/price_metrics.csv backcast_figures -j8 \
+  --configfile config/backcast/config.backcast-2019.yaml --resources entsoe=2
+pixi run -e dashboard backcast-extract results/backcast-2023   # writes dashboard/cache/backcast-2023
+pixi run -e dashboard backcast-dashboard                       # streamlit run dashboard/app.py
+```
+
+- After code changes, `--rerun-triggers mtime --forcerun compose_network` avoids re-running the ENTSO-E downloads.
+- `config/backcast/config.backcast-2019-plain.yaml` is the unrefined 2019 reference.
+- Solver: Gurobi. The marginal cost spread makes the problem a QP (optimisation with a squared cost term).
+- Outputs: `results/backcast-<year>/backcast/{price_metrics.csv, price_monthly_bias.csv, price_evaluation.pdf, figures/}`.
+
+## Known limitations and open items
+
+- Price spikes are too low. Dispatch in the observed top 5 % hours matches; the gap is a bid markup that a cost-based model cannot produce.
+- No hours at or below 0 EUR/MWh. Nuclear and biomass throttle bands and Nordic reservoir hydro absorb every surplus.
+  Observed share 3.0 % of hours (2023), model 0.3 %.
+- Germany exports too much: model net export +21.5 TWh vs scheduled -14.5 TWh (2023), +49.5 vs +31.9 TWh (2019).
+- Finland is too cheap: bias -18.5 EUR/MWh in 2023.
+- Italy: 2023 bias per Italian zone ranges from -9.4 to +2.3 EUR/MWh (2019: -17.7 to +2.4). Under investigation.
+- The Norwegian zones NO_1, NO_2 and NO_5 separate in 44 % of 2023 model hours (observed 38 %). The hydro inflow split per zone is uncertain.
+- The south-east chain (HU, SK, HR) shares one price more often than the market. The Baltics and other edge zones miss the daily shape.
+- 2019 prices of PL, RO, BG and GB are published in local currency and are not scored yet.
+- The ENTSO-E NTC download is slow (98 border retrievals per year). `backcast.max_capacity_gap_hours: 48` equals the longest 2023 gap.
+- Only one Gurobi licence is used, so solves run one after another.
+- Biomass and solar calibration should be re-tested once the level errors (scarcity, hydro water values) are fixed.
+- Fixes meant for upstream PyPSA-Eur (CH load dates, TES ratio constraints, bidding-zone shapes) and a powerplantmatching data issue for Dutch CCGTs are not filed yet.
+
+---
+
 [![GitHub release (latest by date including pre-releases)](https://img.shields.io/github/v/release/pypsa/pypsa-eur?include_prereleases)](https://github.com/PyPSA/pypsa-eur/releases)
 [![Documentation](https://readthedocs.org/projects/pypsa-eur/badge/?version=latest)](https://pypsa-eur.readthedocs.io/en/latest/?badge=latest)
 [![Test workflows](https://github.com/pypsa/pypsa-eur/actions/workflows/test.yaml/badge.svg)](https://github.com/pypsa/pypsa-eur/actions/workflows/test.yaml)
