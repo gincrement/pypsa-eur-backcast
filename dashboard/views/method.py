@@ -5,53 +5,43 @@
 How it works: method, headline results, scoring, limitations and refinement history, and the run facts filling the prose.
 """
 
+import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
 from dashboard import narrative
-from dashboard.data import TOP_SHARE, RunData, area_metrics, net_export
-from dashboard.views.common import Context, bus_metrics, export_direction, worst
-from scripts.lib.backcast_data import top_errors
+from dashboard.data import (
+    EXPORT_MODEL,
+    EXPORT_SCHEDULED,
+    FOCUS_AREA,
+    TOP_ERROR,
+    TOP_SHARE,
+    RunData,
+    area_metrics,
+    history_frame,
+    summary,
+)
+from dashboard.views.common import CHART_HEIGHT, Context, export_direction, worst
+from scripts.lib.backcast_plotting import MODEL_COLOR, SECOND_COLOR
 
-EXPORTER = "DE_LU"
-INTEGER_ROWS = ["year", "scored buses"]
-
-
-def summary(run: RunData) -> dict[str, float]:
-    """Headline numbers of a run over its whole year, medians over model buses."""
-    buses = bus_metrics(run.model, run.observed, run.observed.index)
-    error = run.model - run.observed
-    export = net_export(run.flows, EXPORTER, run.observed.index)
-    return {
-        "year": run.year,
-        "scored buses": len(buses),
-        "mean observed price (€/MWh)": buses.mean_observed.mean(),
-        "median MAE (€/MWh)": buses.mae.median(),
-        "median Pearson r": buses.pearson_r.median(),
-        "median |bias| (€/MWh)": buses.abs_bias.median(),
-        "hours ≤ 0 observed (%)": 100 * buses.nonpositive_observed.mean(),
-        "hours ≤ 0 model (%)": 100 * buses.nonpositive_model.mean(),
-        f"error in top {TOP_SHARE:.0%} hours (€/MWh)": top_errors(
-            error, run.observed, TOP_SHARE
-        ).median(),
-        f"{EXPORTER} net export model (TWh)": export["model"],
-        f"{EXPORTER} net export scheduled (TWh)": export["scheduled"],
-    }
+INTEGER_ROWS = ["year", "scored model regions"]
+YEAR_COLORS = {"2023": MODEL_COLOR, "2019": SECOND_COLOR}
 
 
 def facts(run: RunData, numbers: dict[str, float]) -> dict[str, str]:
     """Values filling the placeholders of the prose for a run."""
     metrics = area_metrics(run.area_model, run.area_observed)
-    model = numbers[f"{EXPORTER} net export model (TWh)"]
-    scheduled = numbers[f"{EXPORTER} net export scheduled (TWh)"]
+    model = numbers[EXPORT_MODEL]
+    scheduled = numbers[EXPORT_SCHEDULED]
     return {
         "run": run.name,
         "r": f"{numbers['median Pearson r']:.2f}",
         "top": f"{TOP_SHARE:.0%}",
-        "top_error": f"{numbers[f'error in top {TOP_SHARE:.0%} hours (€/MWh)']:+.0f}",
+        "top_error": f"{numbers[TOP_ERROR]:+.0f}",
         "nonpositive_observed": f"{numbers['hours ≤ 0 observed (%)']:.1f} %",
         "nonpositive_model": f"{numbers['hours ≤ 0 model (%)']:.1f} %",
-        "exporter": narrative.NAMES[EXPORTER],
+        "exporter": narrative.NAMES[FOCUS_AREA],
         "direction": export_direction(model, scheduled),
         "export_model": f"{model:+.0f}",
         "export_scheduled": f"{scheduled:+.0f}",
@@ -84,7 +74,7 @@ def headline_results(table: pd.DataFrame, filled: dict[str, str]) -> None:
     with st.expander("Headline results per run"):
         st.caption(
             "Whole year per run, independent of the period in the sidebar. "
-            f"Top {TOP_SHARE:.0%} hours are the most expensive observed hours of each bus."
+            f"Top {TOP_SHARE:.0%} hours are the most expensive observed hours of each model region."
         )
         shown = table.map("{:.2f}".format)
         shown.loc[INTEGER_ROWS] = table.loc[INTEGER_ROWS].map("{:.0f}".format)
@@ -103,10 +93,53 @@ def limitations(filled: dict[str, str]) -> None:
     st.markdown(narrative.LIMITATIONS.format(**filled))
 
 
+def history_chart(frame: pd.DataFrame) -> go.Figure:
+    """Median MAE per refinement step and year as a step line through the kept steps, kept steps filled and rejected ones hollow."""
+    fig = go.Figure()
+    for year, color in YEAR_COLORS.items():
+        kept = frame[frame.kept].dropna(subset=year)
+        fig.add_scatter(
+            x=kept.index,
+            y=kept[year],
+            mode="lines",
+            line=dict(color=color, shape="hv"),
+            name=f"kept model {year}",
+            hoverinfo="skip",
+        )
+        steps = frame.dropna(subset=year)
+        fig.add_scatter(
+            x=steps.index,
+            y=steps[year],
+            mode="markers",
+            marker=dict(
+                color=color,
+                size=10,
+                symbol=np.where(steps.kept, "circle", "circle-open"),
+                line_width=2,
+            ),
+            name=year,
+            showlegend=False,
+            customdata=steps[["step", "verdict"]].to_numpy(),
+            hovertemplate=f"{year}: %{{y:.1f}} €/MWh<br>%{{customdata[0]}}<br>%{{customdata[1]}}<extra></extra>",
+        )
+    fig.update_xaxes(title="step", dtick=1)
+    fig.update_layout(
+        height=CHART_HEIGHT,
+        yaxis_title="median MAE (€/MWh)",
+        margin=dict(t=30, b=30),
+        legend=dict(orientation="h", y=1.08, x=0),
+    )
+    return fig
+
+
 def history() -> None:
-    """Draw the refinement history."""
+    """Draw the refinement history as a chart with the recorded table in an expander."""
     st.header("How the model got better")
-    st.markdown(narrative.HISTORY)
+    st.markdown(narrative.HISTORY_LEAD)
+    frame = history_frame(narrative.HISTORY)
+    st.plotly_chart(history_chart(frame), width="stretch")
+    with st.expander("Every step as recorded (median MAE in €/MWh, 2023 / 2019)"):
+        st.table(frame[["step", "result", "verdict"]])
 
 
 def render(ctx: Context) -> None:

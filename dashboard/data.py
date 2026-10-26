@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from dashboard.narrative import Step
 from scripts.lib.backcast_data import (
     decile_errors,
     monthly_mae,
@@ -34,7 +35,12 @@ MONTH_NAMES = list(calendar.month_name)[1:]
 PERIODS = ["year", *MONTH_NAMES, "winter week", "summer week", "custom"]
 AGGREGATIONS = {"hourly": None, "daily": "D"}
 TOP_SHARE = 0.05
+FOCUS_AREA = "DE_LU"
+TOP_ERROR = f"error in top {TOP_SHARE:.0%} hours (€/MWh)"
+EXPORT_MODEL = f"{FOCUS_AREA} net export model (TWh)"
+EXPORT_SCHEDULED = f"{FOCUS_AREA} net export scheduled (TWh)"
 WEEK_HOURS = 168
+COORDINATE_DIGITS = 2
 KPIS = {
     "MAE": ("mae", "median"),
     "MAE / mean": ("rel_mae", "median"),
@@ -100,7 +106,10 @@ def load_run(path: Path) -> RunData:
         name=path.name,
         model=prices["model"],
         observed=prices["observed"],
-        regions=json.loads((path / "regions.geojson").read_text()),
+        regions=json.loads(
+            (path / "regions.geojson").read_text(),
+            parse_float=lambda x: round(float(x), COORDINATE_DIGITS),
+        ),
         area_to_bus=pd.read_csv(path / "area_to_bus.csv", index_col="bus").iloc[:, 0],
         manifest=json.loads((path / "manifest.json").read_text()),
         **frames,
@@ -164,6 +173,13 @@ def area_metrics(model: pd.DataFrame, observed: pd.DataFrame) -> pd.DataFrame:
         nonpositive_observed=metrics.zero_share_observed
         + metrics.negative_share_observed,
     )
+
+
+def bus_metrics(
+    model: pd.DataFrame, observed: pd.DataFrame, hours: pd.DatetimeIndex
+) -> pd.DataFrame:
+    """Price metrics per bus in the hours."""
+    return area_metrics(model.loc[hours], observed.loc[hours]).rename_axis("bus")
 
 
 def kpis(metrics: pd.DataFrame) -> dict[str, float]:
@@ -263,6 +279,26 @@ def net_export(flows: pd.DataFrame, area: str, hours: pd.DatetimeIndex) -> pd.Se
     return series.reindex(["model", "scheduled"], fill_value=0.0)
 
 
+def summary(run: RunData) -> dict[str, float]:
+    """Headline numbers of a run over its whole year, medians over model regions."""
+    buses = bus_metrics(run.model, run.observed, run.observed.index)
+    error = run.model - run.observed
+    export = net_export(run.flows, FOCUS_AREA, run.observed.index)
+    return {
+        "year": run.year,
+        "scored model regions": len(buses),
+        "mean observed price (€/MWh)": buses.mean_observed.mean(),
+        "median MAE (€/MWh)": buses.mae.median(),
+        "median Pearson r": buses.pearson_r.median(),
+        "median |bias| (€/MWh)": buses.abs_bias.median(),
+        "hours ≤ 0 observed (%)": 100 * buses.nonpositive_observed.mean(),
+        "hours ≤ 0 model (%)": 100 * buses.nonpositive_model.mean(),
+        TOP_ERROR: top_errors(error, run.observed, TOP_SHARE).median(),
+        EXPORT_MODEL: export["model"],
+        EXPORT_SCHEDULED: export["scheduled"],
+    }
+
+
 def hero_week(prices: pd.Series) -> pd.DatetimeIndex:
     """Full Monday-start week with the widest price range among weeks with an hour at or below 0 €/MWh, else among all full weeks."""
     start = prices.index.normalize() - pd.to_timedelta(prices.index.weekday, unit="D")
@@ -293,3 +329,26 @@ def puzzle_tables(
 def marginal_shares(marginal: pd.Series) -> pd.Series:
     """Share of hours per price-setting carrier."""
     return marginal.astype(str).value_counts(normalize=True).rename("share")
+
+
+def history_result(step: Step) -> str:
+    """Recorded median MAE of a step as 2023 / 2019, or its note."""
+    if step.mae_2023 is None:
+        return step.note
+    second = "-" if step.mae_2019 is None else f"{step.mae_2019:.1f}"
+    return f"{step.mae_2023:.1f} / {second}"
+
+
+def history_frame(steps: list[Step]) -> pd.DataFrame:
+    """Refinement steps numbered from 1 with their median MAE per year, whether they were kept and the result as text."""
+    return pd.DataFrame(
+        {
+            "step": [s.name for s in steps],
+            "2023": [s.mae_2023 for s in steps],
+            "2019": [s.mae_2019 for s in steps],
+            "kept": [s.kept for s in steps],
+            "result": [history_result(s) for s in steps],
+            "verdict": [s.verdict for s in steps],
+        },
+        index=pd.RangeIndex(1, len(steps) + 1, name="#"),
+    )

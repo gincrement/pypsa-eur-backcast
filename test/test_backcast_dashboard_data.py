@@ -16,7 +16,7 @@ from shapely.geometry import box
 
 from dashboard import data
 from dashboard.extract import extract
-from dashboard.narrative import NAMES
+from dashboard.narrative import HISTORY, NAMES, Step
 from dashboard.views import METHOD_PAGE, PAGES, STORY_PAGE, ZONE_PAGE
 from scripts.lib.backcast_data import (
     NO_MARGINAL,
@@ -274,8 +274,39 @@ def test_net_export(run_dir):
     )
 
 
+def test_story_spike_card_uses_how_it_works_median(run_dir):
+    pytest.importorskip("streamlit")
+    from dashboard.views.overview import plain_error, puzzles
+
+    run = data.load_run(run_dir)
+
+    spike = plain_error(data.summary(run)[data.TOP_ERROR])
+    assert f"is {spike} (median over model regions)" in puzzles(run)[0].answer
+
+
+@pytest.mark.parametrize(
+    "step, result",
+    [
+        (Step("a", "start", True, 28.5, 9.94), "28.5 / 9.9"),
+        (Step("b", "kept", True, 24.0), "24.0 / -"),
+        (Step("c", "rejected", False, note="no gain"), "no gain"),
+    ],
+)
+def test_history_result(step, result):
+    assert data.history_result(step) == result
+
+
+def test_history_frame_numbers_steps_and_marks_rejected():
+    frame = data.history_frame(HISTORY)
+
+    assert frame.index.tolist() == list(range(1, len(HISTORY) + 1))
+    assert frame.kept.iloc[0] and not frame.kept.iloc[-1]
+    assert frame.verdict[~frame.kept].str.startswith("rejected").all()
+    assert frame["2023"].notna().sum() == sum(s.mae_2023 is not None for s in HISTORY)
+
+
 def test_zone_names_cover_zone_order():
-    assert set(NAMES) == set(ZONE_ORDER)
+    assert set(ZONE_ORDER) <= set(NAMES)
 
 
 def app_test(cache: Path, monkeypatch, **params: str):

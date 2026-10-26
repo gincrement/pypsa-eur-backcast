@@ -2,8 +2,11 @@
 #
 # SPDX-License-Identifier: MIT
 """
-Static prose of the story and how-it-works pages, placeholders in braces are filled from the selected run.
+Prose and recorded refinement history of the story and how-it-works pages, placeholders in braces are filled from
+the selected run.
 """
+
+from dataclasses import dataclass
 
 TITLE = "Can costs explain Europe's power prices?"
 CLAIM = "Fuel and CO2 costs explain most of Europe's power prices. The rest is the interesting part."
@@ -51,6 +54,14 @@ NAMES = {
     "LV": "Latvia",
     "LT": "Lithuania",
     "IE_SEM": "Ireland",
+    "GB": "Great Britain",
+    "AL": "Albania",
+    "BA": "Bosnia and Herzegovina",
+    "ME": "Montenegro",
+    "MK": "North Macedonia",
+    "XK": "Kosovo",
+    "MD": "Moldova",
+    "UA_IPS": "Ukraine",
 }
 
 HERO = """
@@ -76,7 +87,7 @@ DEFINITIONS = """
 - **Shape match (Pearson r)**: how well the model follows the ups and downs of the market price. 1 is perfect, 0 is no match.
 - **Bias**: the model's yearly mean price minus the market's. Positive means the model is too expensive.
 - **std ratio**: how strongly the model price swings compared with the market. 1 means equally strong.
-- Headline numbers are medians over the model buses, as in the evaluation of a run.
+- Headline numbers are medians over the model regions, about one per bidding zone, as in the evaluation of a run.
 """
 
 PUZZLES = "Four puzzles"
@@ -86,7 +97,7 @@ They cover the full year {year}, whatever period is picked in the sidebar.
 """
 
 SPIKES = """
-In the {top} most expensive hours of the year the model price is {median} (median over zones). In {zone} it is {value}.
+In the {top} most expensive hours of the year the model price is {median} (median over model regions). In {zone} it is {value}.
 Real bids carry a markup on top of fuel and CO2: scarcity rents and start-up costs. A cost-only model cannot see them.
 """
 
@@ -104,8 +115,8 @@ that shape real trade are missing, and power flows wherever the price gap is lar
 """
 
 CHEAP = """
-The price of {zone} is {value} on average over the year. Two likely causes. Cheap imports from
-neighbours with flat prices, such as hydro-rich Nordic zones, can pull the price down. And the water flowing into hydro plants, and its split between
+The price of {zone} is {value} on average over the year. Two common causes. Cheap imports from
+neighbours with flat prices can pull the price down. And the water flowing into hydro plants, and its split between
 zones of one country, is uncertain.
 """
 
@@ -148,7 +159,7 @@ PIPELINE = {
         "water flowing into hydro plants, pumped storage sized per country",
     ],
     "Model": [
-        "one node per bidding zone",
+        "about one region per bidding zone",
         "zones trade up to the agreed border capacity, no physical grid",
         "cheapest dispatch for every hour of the year",
         "one optimisation for the whole year, knowing all hours in advance",
@@ -162,14 +173,15 @@ PIPELINE = {
 
 SCORING = """
 For each zone the model price is compared with the real hourly price over the full year. Three numbers
-summarise a run, each as the median over the model buses (the nodes of the model):
+summarise a run, each as the median over the model regions (about one per bidding zone):
 
 - **MAE** (mean absolute error): the typical hourly miss in €/MWh.
 - **Pearson r**: how well the hourly ups and downs follow the market. 1 is perfect.
 - **|bias|**: how far the yearly mean price is off, in €/MWh.
 
 A change to the model is kept only if it lowers the median MAE in both the main and the validation year.
-This guards against tuning to one year. Zones that publish prices in a local currency in a year are not scored.
+This guards against tuning to one year. The one exception is a data fix to the zone shapes, kept despite a small
+loss in 2023. Zones that publish prices in a local currency in a year are not scored.
 """
 
 WORKS = """
@@ -182,32 +194,112 @@ WORKS = """
 LIMITATIONS = """
 | What is missing | Evidence in {run} | Where to look |
 |---|---|---|
-| Price spikes are too low. Real bids carry markups (scarcity rents, start-up costs) that a cost-only model cannot produce. | mean miss in the {top} most expensive hours: {top_error} €/MWh (median over buses) | The story, four puzzles |
-| Almost no hours at or below 0 €/MWh. Nuclear, biomass and Nordic hydro power down at a positive cost and soak up every surplus. Limits on how flexible plants are, are missing. | hours ≤ 0: {nonpositive_observed} in the market vs {nonpositive_model} in the model (mean over buses) | The story, metric table |
-| {exporter} exports {direction}. | net export {export_model} TWh in the model vs {export_scheduled} TWh scheduled | Trade between countries, DE_LU |
-| Some zones are off in level. Most continental zones are too expensive, several edge zones too cheap. | too expensive by: {high_bias}; too cheap by: {low_bias} €/MWh | The story, map metric bias |
-| The Baltics and other edge zones miss the daily shape. Cheap night imports from flat Nordic prices flatten the profile. | largest MAE: {worst_mae} | Explore a country |
-| The south-east chain (HU, SK, HR) shares one price more often than the market does. | | Trade between countries |
+| Price spikes are too low. Real bids carry markups (scarcity rents, start-up costs) that a cost-only model cannot produce. | mean miss in the {top} most expensive hours: {top_error} €/MWh (median over model regions) | The story, four puzzles |
+| Almost no hours at or below 0 €/MWh. Nuclear, biomass and Nordic hydro power down at a positive cost and soak up every surplus. Limits on how flexible plants are, are missing. | hours ≤ 0: {nonpositive_observed} in the market vs {nonpositive_model} in the model (mean over model regions) | The story, metric table |
+| {exporter} exports {direction}. | net export {export_model} TWh in the model vs {export_scheduled} TWh scheduled | Trade between countries, {exporter} |
+| Some zones are off in level, too expensive or too cheap on average. | too expensive by: {high_bias}; too cheap by: {low_bias} €/MWh | The story, map metric bias |
+| Some zones miss the daily shape. Cheap imports from neighbours with flat prices can flatten the profile. | largest MAE: {worst_mae} | Explore a country |
+| Without a physical grid, neighbouring zones can share one price more often than in the market. | | Trade between countries |
 | Water flowing into hydro plants, and its split between zones of one country (SE, NO, IT), is uncertain. Reservoirs do not price their water from real filling levels. | | Explore a country, energy per type |
 | Plant data has gaps; Dutch gas plants needed local fixes. Gas prices are monthly, not daily. Plants start and ramp without limits. | | Explore a country, energy per type |
 """
 
-HISTORY = """
-Median MAE in €/MWh as recorded when each step was tested (2023 / 2019).
-
-| Step | Result | Verdict |
-|---|---|---|
-| Baseline with NTC links and nominal prices | 28.5 / 9.9 | start |
-| Wind and nuclear calibrated to ENTSO-E, lignite fuel, flat hydro dispatch | 24.0 / - | kept |
-| Must-run floors, thermal cost spread, hybrid Core capacities | 22.4 / 8.6 | kept |
-| Iberian gas price cap, GB wind targets, wider cost spread, fixed external borders | 21.8 / 8.2 | kept |
-| Bidding-zone shapes from zone polygons | 22.3 / 8.1 | kept as a data fix despite the 2023 loss |
-| Pumped storage energy capped at Geth et al. 2015 | 21.2 / 8.0 | kept |
-| Dutch CCGT data fix and cost spread referenced to observed output | 21.0 / 7.9 | kept |
-| Biomass output capped at ENTSO-E capacity factors | 24.1 / 9.1 | rejected |
-| Solar calibrated to ENTSO-E | 22.1 / 8.2 | rejected, worse in 2019 |
-| Monthly thermal availability from observed peaks | 22.1 / 10.8 | rejected, load shedding in 2019 |
-| Cost spread with fixed utilisation | level +7 to +10 | rejected |
-| Annual hydro inflow scaling per zone | median gain only | rejected, r and mean MAE worse |
-| Reservoir targets, unit commitment, negative renewable bids, reserve demand curves | no gain or too slow | rejected |
+HISTORY_LEAD = """
+Every change to the model was tested in both years. It was kept only if the typical hourly miss (median MAE over
+model regions) went down. The one exception is a data fix, kept despite a small loss in 2023. Filled dots are kept
+changes, hollow dots rejected ones. The line follows the kept model. Hover a dot to see the change. Numbers are as
+recorded when each step was tested.
 """
+
+HISTORY_TEASER = """
+The model got here step by step. Each change was tested in two years, and the typical hourly miss in 2023 fell
+from {start:.1f} to {end:.1f} €/MWh.
+"""
+
+REPLAY = "Play this week on the map: market and model prices hour by hour"
+REPLAY_LEAD = """
+Each region is one price region of the model, about one per bidding zone. Press play to watch prices move through the week in the market (left) and in
+the model (right). The same colours mean the same price on both maps.
+"""
+
+
+@dataclass(frozen=True)
+class Step:
+    """One recorded refinement step with its median MAE in €/MWh per year, or a note when no MAE was recorded."""
+
+    name: str
+    verdict: str
+    kept: bool
+    mae_2023: float | None = None
+    mae_2019: float | None = None
+    note: str = ""
+
+
+HISTORY = [
+    Step("Baseline with NTC links and nominal prices", "start", True, 28.5, 9.9),
+    Step(
+        "Wind and nuclear calibrated to ENTSO-E, lignite fuel, flat hydro dispatch",
+        "kept",
+        True,
+        24.0,
+    ),
+    Step(
+        "Must-run floors, thermal cost spread, hybrid Core capacities",
+        "kept",
+        True,
+        22.4,
+        8.6,
+    ),
+    Step(
+        "Iberian gas price cap, GB wind targets, wider cost spread, fixed external borders",
+        "kept",
+        True,
+        21.8,
+        8.2,
+    ),
+    Step(
+        "Bidding-zone shapes from zone polygons",
+        "kept as a data fix despite the 2023 loss",
+        True,
+        22.3,
+        8.1,
+    ),
+    Step("Pumped storage energy capped at Geth et al. 2015", "kept", True, 21.2, 8.0),
+    Step(
+        "Dutch CCGT data fix and cost spread referenced to observed output",
+        "kept",
+        True,
+        21.0,
+        7.9,
+    ),
+    Step(
+        "Biomass output capped at ENTSO-E capacity factors",
+        "rejected",
+        False,
+        24.1,
+        9.1,
+    ),
+    Step("Solar calibrated to ENTSO-E", "rejected, worse in 2019", False, 22.1, 8.2),
+    Step(
+        "Monthly thermal availability from observed peaks",
+        "rejected, load shedding in 2019",
+        False,
+        22.1,
+        10.8,
+    ),
+    Step(
+        "Cost spread with fixed utilisation", "rejected", False, note="level +7 to +10"
+    ),
+    Step(
+        "Annual hydro inflow scaling per zone",
+        "rejected, r and mean MAE worse",
+        False,
+        note="median gain only",
+    ),
+    Step(
+        "Reservoir targets, unit commitment, negative renewable bids, reserve demand curves",
+        "rejected",
+        False,
+        note="no gain or too slow",
+    ),
+]

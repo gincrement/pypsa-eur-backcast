@@ -9,12 +9,13 @@ from typing import Any
 
 import streamlit as st
 
+from dashboard.data import FOCUS_AREA
 from dashboard.views import PAGES
 
 DEFAULTS: dict[str, Any] = {
     "page": PAGES[0],
     "run_a": "",
-    "area": "DE_LU",
+    "area": FOCUS_AREA,
     "period": "year",
     "start": "",
     "end": "",

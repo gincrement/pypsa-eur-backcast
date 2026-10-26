@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 """
-Cross border flows: net and hourly exchange of one area per neighbour, model against ENTSO-E scheduled.
+Trade between countries: net and hourly exchange of one area per neighbour, model against ENTSO-E scheduled.
 """
 
 import pandas as pd

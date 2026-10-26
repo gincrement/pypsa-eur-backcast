@@ -13,7 +13,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from dashboard.data import RunData, area_metrics
+from dashboard.data import RunData, area_metrics, bus_metrics
 from dashboard.narrative import NAMES
 from scripts.lib.backcast_plotting import (
     DIVERGING,
@@ -27,6 +27,13 @@ from scripts.lib.backcast_plotting import (
 
 ROW_HEIGHT = 16
 CHART_HEIGHT = 420
+MAP_HEIGHT = 520
+GEOS = dict(
+    visible=False,
+    projection_type="mercator",
+    lonaxis_range=[-10.5, 31.5],
+    lataxis_range=[35.5, 71],
+)
 WORSE_COLOR = "#D55E00"
 MONTHS = list(calendar.month_abbr)[1:]
 MARKER_COLORS = {"negative price": "#CC79A7", "load shedding": WORSE_COLOR}
@@ -82,13 +89,6 @@ class Context:
         return bus_metrics(self.run.model, self.run.observed, self.hours)
 
 
-def bus_metrics(
-    model: pd.DataFrame, observed: pd.DataFrame, hours: pd.DatetimeIndex
-) -> pd.DataFrame:
-    """Price metrics per bus in the hours."""
-    return area_metrics(model.loc[hours], observed.loc[hours]).rename_axis("bus")
-
-
 def zone_label(area: str) -> str:
     """Plain name of an area with its code."""
     return f"{NAMES[area]} ({area})"
@@ -122,6 +122,28 @@ def zone_layout(fig: go.Figure, areas: list[str]) -> go.Figure:
         fig.add_hline(y=y, line_width=0.6, line_color="grey")
     fig.update_yaxes(autorange="reversed", type="category")
     fig.update_layout(height=zone_height(len(areas)), margin=dict(t=50, b=30))
+    return fig
+
+
+def region_choropleth(run: RunData, values: pd.Series, **style) -> go.Choropleth:
+    """Choropleth of bus values over the bus regions, hovering the country name of each bus."""
+    areas = run.area_to_bus[values.index]
+    return go.Choropleth(
+        geojson=run.regions,
+        featureidkey="properties.name",
+        locations=values.index,
+        z=values.to_numpy(),
+        customdata=areas.to_numpy(),
+        text=[NAMES[area] for area in areas],
+        hovertemplate="%{text}: %{z:.2f}<extra></extra>",
+        **style,
+    )
+
+
+def map_layout(fig: go.Figure) -> go.Figure:
+    """Fit the geo subplots of a region map to Europe without frame and margins."""
+    fig.update_geos(**GEOS)
+    fig.update_layout(height=MAP_HEIGHT, margin=dict(l=0, r=0, t=0, b=0))
     return fig
 
 
@@ -186,9 +208,7 @@ def heatmap(
     return fig
 
 
-def price_traces(
-    ctx: Context, model: pd.Series, observed: pd.Series
-) -> list[go.Scatter]:
+def price_traces(model: pd.Series, observed: pd.Series, name: str) -> list[go.Scatter]:
     """Model and observed price lines, hovering the error."""
     error = (model - observed).to_numpy()
     return [
@@ -201,7 +221,7 @@ def price_traces(
         go.Scatter(
             x=model.index,
             y=model,
-            name=ctx.run.name,
+            name=name,
             line=dict(color=MODEL_COLOR, width=1),
             customdata=error,
             hovertemplate="%{y:.1f} (error %{customdata:.1f})",

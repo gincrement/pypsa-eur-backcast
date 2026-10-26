@@ -48,7 +48,7 @@ def hourly_line(ctx: Context) -> go.Figure:
     model = ctx.run.area_model.loc[window, ctx.area]
     observed = ctx.run.area_observed.loc[window, ctx.area]
     series = [aggregate(s, ctx.aggregation) for s in (model, observed)]
-    fig = go.Figure(price_traces(ctx, *series))
+    fig = go.Figure(price_traces(*series, ctx.run.name))
     if ctx.aggregation == "hourly":
         shedding = ctx.run.load["load_shedding"].reindex(
             columns=[ctx.bus], fill_value=0.0

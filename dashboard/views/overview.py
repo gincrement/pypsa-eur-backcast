@@ -15,27 +15,33 @@ from plotly.subplots import make_subplots
 
 from dashboard import narrative
 from dashboard.data import (
+    EXPORT_MODEL,
+    EXPORT_SCHEDULED,
+    FOCUS_AREA,
     KPIS,
+    TOP_ERROR,
     TOP_SHARE,
     RunData,
     hero_week,
+    history_frame,
     kpis,
-    net_export,
     puzzle_tables,
+    summary,
 )
 from dashboard.state import follow_selection, open_page
-from dashboard.views import FLOWS_PAGE, ZONE_PAGE, errors
+from dashboard.views import FLOWS_PAGE, METHOD_PAGE, ZONE_PAGE, errors, replay
 from dashboard.views.common import (
     CHART_HEIGHT,
     Context,
     export_direction,
+    map_layout,
     price_traces,
+    region_choropleth,
     show,
     worst,
     zone_label,
     zone_layout,
 )
-from dashboard.views.method import EXPORTER
 from scripts.lib.backcast_data import price_metrics
 from scripts.lib.backcast_plotting import (
     BAND_COLOR,
@@ -47,7 +53,6 @@ from scripts.lib.backcast_plotting import (
 )
 
 PERCENT = {"MAE / mean"}
-MAP_HEIGHT = 520
 MAP_METRICS = {
     "MAE (€/MWh)": "mae",
     "bias (€/MWh)": "mean_bias",
@@ -56,7 +61,6 @@ MAP_METRICS = {
 }
 DEFAULT_MAP = "MAE (€/MWh)"
 DIVERGING_METRICS = {"mean_bias"}
-NEGATIVE_AREA = "DE_LU"
 CARD_ZONES = 6
 CARD_HEIGHT = 220
 CARD_COLORS = {"market": OBSERVED_COLOR, "model": MODEL_COLOR}
@@ -100,7 +104,7 @@ def kpi_row(label: str, metrics: pd.DataFrame) -> None:
         column.metric(name, formatted(name, values[name]))
 
 
-def summary(values: dict[str, float]) -> str:
+def kpi_text(values: dict[str, float]) -> str:
     """Headline numbers as a sentence fragment."""
     return (
         f"MAE **{values['MAE']:.2f} €/MWh** "
@@ -112,16 +116,16 @@ def summary(values: dict[str, float]) -> str:
 def lead(ctx: Context, buses: pd.DataFrame, metrics: pd.DataFrame) -> str:
     """Summarise the quality of the run, the validation runs over the comparable period and the worst zones."""
     text = (
-        f"Median over **{len(buses)} model buses** ({len(metrics)} bidding zones), "
-        f"{ctx.period}: {summary(kpis(buses))}."
+        f"Median over **{len(buses)} model regions** ({len(metrics)} bidding zones), "
+        f"{ctx.period}: {kpi_text(kpis(buses))}."
     )
     for ref in ctx.references:
-        text += f" Validation, {ref.period}: {summary(kpis(ref.bus_metrics()))}."
+        text += f" Validation, {ref.period}: {kpi_text(kpis(ref.bus_metrics()))}."
     return (
         f"{text}\n\nLargest MAE: {worst(metrics.mae)} €/MWh. "
         f"Largest bias: {worst(metrics.mean_bias, signed=True)} €/MWh. "
-        f"Hours at or below 0 €/MWh: observed {metrics.nonpositive_observed.mean():.1%}, "
-        f"model {metrics.nonpositive_model.mean():.1%} (mean over zones)."
+        f"Hours at or below 0 €/MWh: observed {buses.nonpositive_observed.mean():.1%}, "
+        f"model {buses.nonpositive_model.mean():.1%} (mean over model regions)."
     )
 
 
@@ -130,41 +134,27 @@ def zone_map(ctx: Context, column: str) -> go.Figure:
     values = price_metrics(
         ctx.run.model.loc[ctx.hours], ctx.run.observed.loc[ctx.hours]
     )[column]
-    areas = ctx.run.area_to_bus[values.index]
-    selected = areas.to_numpy() == ctx.area
+    selected = ctx.run.area_to_bus[values.index].to_numpy() == ctx.area
     limit = symmetric_limit(values)
     scale = (
         dict(colorscale=DIVERGING, zmid=0, zmin=-limit, zmax=limit)
         if column in DIVERGING_METRICS
         else dict(colorscale=SEQUENTIAL.capitalize())
     )
-    fig = go.Figure(
-        go.Choropleth(
-            geojson=ctx.run.regions,
-            featureidkey="properties.name",
-            locations=values.index,
-            z=values.to_numpy(),
-            customdata=areas.to_numpy(),
-            hovertemplate="%{customdata} (%{location}): %{z:.2f}<extra></extra>",
-            marker_line_width=np.where(selected, 2.0, 0.3),
-            marker_line_color=np.where(selected, "black", "white"),
-            colorbar=dict(thickness=12, len=0.8),
-            **scale,
-        )
+    trace = region_choropleth(
+        ctx.run,
+        values,
+        marker_line_width=np.where(selected, 2.0, 0.3),
+        marker_line_color=np.where(selected, "black", "white"),
+        colorbar=dict(thickness=12, len=0.8),
+        **scale,
     )
-    fig.update_geos(
-        visible=False,
-        projection_type="mercator",
-        lonaxis_range=[-10.5, 31.5],
-        lataxis_range=[35.5, 71],
-    )
-    fig.update_layout(
-        height=MAP_HEIGHT, margin=dict(l=0, r=0, t=0, b=0), clickmode="event+select"
-    )
+    fig = map_layout(go.Figure(trace))
+    fig.update_layout(clickmode="event+select")
     return fig
 
 
-def bars(metrics: pd.DataFrame, label: str, area: str) -> go.Figure:
+def bars(metrics: pd.DataFrame, area: str) -> go.Figure:
     """Dumbbell of mean prices and bars of MAE and Pearson r per area in zone order, the selected area in bold."""
     areas = list(metrics.index)
     fig = make_subplots(
@@ -187,7 +177,7 @@ def bars(metrics: pd.DataFrame, label: str, area: str) -> go.Figure:
         )
     for column, color, name in [
         ("mean_observed", OBSERVED_COLOR, "market"),
-        ("mean_model", MODEL_COLOR, label),
+        ("mean_model", MODEL_COLOR, "model"),
     ]:
         fig.add_scatter(
             x=metrics[column],
@@ -205,7 +195,7 @@ def bars(metrics: pd.DataFrame, label: str, area: str) -> go.Figure:
             y=areas,
             orientation="h",
             marker_color=MODEL_COLOR,
-            name=label,
+            name="model",
             customdata=areas,
             showlegend=False,
             row=1,
@@ -226,7 +216,7 @@ def hero_chart(ctx: Context, week: pd.DatetimeIndex) -> go.Figure:
     """Model and observed prices of the area in the week with the spike and the lowest hour at or below 0 €/MWh annotated."""
     model = ctx.run.area_model.loc[week, ctx.area]
     observed = ctx.run.area_observed.loc[week, ctx.area]
-    fig = go.Figure(price_traces(ctx, model, observed))
+    fig = go.Figure(price_traces(model, observed, "model"))
     peak, low = observed.idxmax(), observed.idxmin()
     notes = {peak: ("spikes to", "reaches", -40)}
     if observed[low] <= 0:
@@ -250,10 +240,9 @@ def hero_chart(ctx: Context, week: pd.DatetimeIndex) -> go.Figure:
     return fig
 
 
-def hero(ctx: Context) -> None:
+def hero(ctx: Context, week: pd.DatetimeIndex) -> None:
     """Draw the plain explanation and the hero week of the area."""
     st.markdown(narrative.HERO.format(year=ctx.run.year))
-    week = hero_week(ctx.run.area_observed[ctx.area])
     st.plotly_chart(hero_chart(ctx, week), width="stretch")
     st.caption(narrative.HERO_CHART.format(area=zone_label(ctx.area), start=week[0]))
 
@@ -270,12 +259,12 @@ def big_numbers(ctx: Context) -> None:
     shape.metric(
         "How well the hourly shape matches (r)",
         f"{values['r']:.2f}",
-        help="Pearson r, median over model buses: 1 means the model follows every up and down of the market price, 0 means no match.",
+        help="Pearson r, median over the model regions (about one per bidding zone): 1 means the model follows every up and down of the market price, 0 means no match.",
     )
     gap.metric(
         "Typical hourly miss",
         f"{values['MAE']:.1f} €/MWh",
-        help="Mean absolute error, median over model buses: the average gap between model and market price.",
+        help="Mean absolute error, median over the model regions: the average gap between model and market price.",
     )
     notes = [f"{ctx.run.name}, {ctx.period}."]
     for ref in ctx.references:
@@ -329,9 +318,7 @@ def accuracy(ctx: Context) -> None:
             zone_map(ctx, MAP_METRICS[name or DEFAULT_MAP]), "zone_map", select=True
         )
     with right:
-        points += show(
-            bars(metrics, ctx.run.name, ctx.area), "overview_bars", select=True
-        )
+        points += show(bars(metrics, ctx.area), "overview_bars", select=True)
     area = points[0]["customdata"] if points else None
     follow_selection("overview", area, area=area, page=ZONE_PAGE)
     with st.expander("What the numbers mean"):
@@ -357,14 +344,15 @@ def puzzles(run: RunData) -> list[Puzzle]:
     tables = puzzle_tables(run.area_model, run.area_observed)
     spikes, negative, cheap = tables["spikes"], tables["negative"], tables["cheap"]
     spike_zone, cheap_zone = spikes.index[0], cheap.index[0]
-    export = net_export(run.flows, EXPORTER, run.observed.index)
-    shares = negative.loc[NEGATIVE_AREA]
+    numbers = summary(run)
+    export, scheduled = numbers[EXPORT_MODEL], numbers[EXPORT_SCHEDULED]
+    shares = negative.loc[FOCUS_AREA]
     return [
         Puzzle(
             "Why are the price spikes too low?",
             narrative.SPIKES.format(
                 top=f"{TOP_SHARE:.0%}",
-                median=plain_error(spikes.model.median()),
+                median=plain_error(numbers[TOP_ERROR]),
                 zone=narrative.NAMES[spike_zone],
                 value=plain_error(spikes.model.iloc[0]),
             ),
@@ -377,30 +365,28 @@ def puzzles(run: RunData) -> list[Puzzle]:
         Puzzle(
             "Why does the model almost never go negative?",
             narrative.NEGATIVE.format(
-                zone=narrative.NAMES[NEGATIVE_AREA],
+                zone=narrative.NAMES[FOCUS_AREA],
                 market=f"{shares.market:.1%}",
                 model=f"{shares.model:.1%}",
             ),
             100 * negative.head(CARD_ZONES),
             "% of hours at or below 0",
-            f"Explore {narrative.NAMES[NEGATIVE_AREA]}",
+            f"Explore {narrative.NAMES[FOCUS_AREA]}",
             ZONE_PAGE,
-            NEGATIVE_AREA,
+            FOCUS_AREA,
         ),
         Puzzle(
-            f"Why does {narrative.NAMES[EXPORTER]} export {export_direction(export.model, export.scheduled)}?",
+            f"Why does {narrative.NAMES[FOCUS_AREA]} export {export_direction(export, scheduled)}?",
             narrative.EXPORT.format(
-                zone=narrative.NAMES[EXPORTER],
-                model=f"{export.model:+.0f}",
-                scheduled=f"{export.scheduled:+.0f}",
+                zone=narrative.NAMES[FOCUS_AREA],
+                model=f"{export:+.0f}",
+                scheduled=f"{scheduled:+.0f}",
             ),
-            pd.DataFrame(
-                {"market": export.scheduled, "model": export.model}, [EXPORTER]
-            ),
+            pd.DataFrame({"market": scheduled, "model": export}, [FOCUS_AREA]),
             "net export (TWh)",
-            f"See the trade of {narrative.NAMES[EXPORTER]}",
+            f"See the trade of {narrative.NAMES[FOCUS_AREA]}",
             FLOWS_PAGE,
-            EXPORTER,
+            FOCUS_AREA,
         ),
         Puzzle(
             f"Why is {narrative.NAMES[cheap_zone]} too cheap?",
@@ -460,19 +446,38 @@ def four_puzzles(run: RunData) -> None:
             puzzle_card(puzzle, f"puzzle_{i}")
 
 
+def history_teaser() -> None:
+    """Draw one line on how the model got better with a button to its history."""
+    kept = history_frame(narrative.HISTORY).query("kept")["2023"].dropna()
+    left, right = st.columns([3, 1], vertical_alignment="center")
+    left.markdown(
+        narrative.HISTORY_TEASER.format(start=kept.iloc[0], end=kept.iloc[-1])
+    )
+    right.button(
+        "See every step",
+        key="history_teaser",
+        width="stretch",
+        on_click=open_page,
+        args=(METHOD_PAGE,),
+    )
+
+
 def call_to_action() -> None:
-    """Draw the invitation to reuse and contribute with the project links."""
+    """Draw the invitation to reuse and contribute with the project links and the history teaser."""
     st.header("Take it further")
     st.markdown(narrative.CTA)
     for column, (name, url) in zip(
         st.columns(len(narrative.LINKS)), narrative.LINKS.items()
     ):
         column.link_button(name, url, width="stretch")
+    history_teaser()
 
 
 def render(ctx: Context) -> None:
     """Draw the story page from hero to call to action."""
-    hero(ctx)
+    week = hero_week(ctx.run.area_observed[ctx.area])
+    hero(ctx, week)
+    replay.replay(ctx, week)
     big_numbers(ctx)
     pick_country(ctx)
     accuracy(ctx)
