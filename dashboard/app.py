@@ -18,11 +18,9 @@ from dashboard.views import (
     CONTROLS,
     PAGES,
     QUESTIONS,
-    compare,
-    dispatch,
-    errors,
+    flows,
+    limitations,
     overview,
-    report,
     zone,
 )
 from dashboard.views.common import Context, Reference
@@ -30,17 +28,7 @@ from scripts.lib.backcast_plotting import STACK, group_colors
 
 AUTO_DAILY_HOURS = 24 * 62
 RENDER: dict[str, Callable[[Context], None]] = dict(
-    zip(
-        PAGES,
-        [
-            report.render,
-            overview.render,
-            errors.render,
-            zone.render,
-            dispatch.render,
-            compare.render,
-        ],
-    )
+    zip(PAGES, [overview.render, zone.render, flows.render, limitations.render])
 )
 
 
@@ -50,31 +38,9 @@ def cached_run(name: str) -> data.RunData:
 
 
 @st.cache_data
-def cached_variant(variant: str, run: str) -> pd.DataFrame:
-    return data.load_variant(
-        data.discover_variants(data.VARIANTS)[variant], cached_run(run).observed
-    )
-
-
-@st.cache_data
 def carrier_colors() -> dict[str, str]:
     plotting = yaml.safe_load((data.ROOT / "config/plotting.default.yaml").read_text())
     return group_colors(plotting["plotting"]["tech_colors"], STACK)
-
-
-def comparison(name: str, run: data.RunData, runs: list[str]) -> data.Comparison | None:
-    """Load the comparison run or the variant aligned to the cached run of its year."""
-    if not name:
-        return None
-    if name in runs:
-        other = cached_run(name)
-        return data.Comparison(name, other.model, other)
-    year = data.variant_year(data.discover_variants(data.VARIANTS)[name])
-    same = [r for r in runs if cached_run(r).year == year]
-    if not same:
-        st.sidebar.error(f"No extracted run of {year} to align {name}")
-        return None
-    return data.Comparison(name, cached_variant(name, same[0]), None)
 
 
 def period_dates(run: data.RunData) -> tuple[date, date]:
@@ -119,21 +85,14 @@ def reference(
     return Reference(run, hours, period_label(st.session_state.period, hours))
 
 
-def normalise(runs: list[str]) -> tuple[data.RunData, list[str]]:
-    """Reset state values that the selected run does not offer and return the run and the comparison choices."""
+def normalise(runs: list[str]) -> data.RunData:
+    """Reset state values that the selected run does not offer and return the run."""
     state = st.session_state
     if state.page not in PAGES:
         state.page = PAGES[0]
     if state.run_a not in runs:
         state.run_a = runs[-1]
     run = cached_run(state.run_a)
-    choices = [
-        "",
-        *[r for r in runs if r != run.name],
-        *data.discover_variants(data.VARIANTS),
-    ]
-    if state.run_b not in choices:
-        state.run_b = ""
     areas = list(run.buses.index)
     if state.area not in areas:
         state.area = DEFAULTS["area"] if DEFAULTS["area"] in areas else areas[0]
@@ -141,23 +100,32 @@ def normalise(runs: list[str]) -> tuple[data.RunData, list[str]]:
         state.period = DEFAULTS["period"]
     if state.agg not in ["auto", *data.AGGREGATIONS]:
         state.agg = DEFAULTS["agg"]
-    return run, choices
+    return run
+
+
+def open_page(page: str) -> None:
+    """Switch to a page."""
+    st.session_state.page = page
 
 
 def sidebar(runs: list[str]) -> Context:
     """Draw the page list and the controls the page uses, return the page context."""
-    run, choices = normalise(runs)
+    run = normalise(runs)
     bar = st.sidebar
-    bar.radio("Page", PAGES, key="page")
+    for page in PAGES:
+        bar.button(
+            page,
+            key=f"page_{page}",
+            type="primary" if page == st.session_state.page else "secondary",
+            width="stretch",
+            on_click=open_page,
+            args=(page,),
+        )
     controls = CONTROLS[st.session_state.page]
     if controls:
         bar.divider()
     if "run_a" in controls:
-        bar.selectbox("Run A", runs, key="run_a")
-    if "run_b" in controls:
-        bar.selectbox(
-            "Run B or variant", choices, key="run_b", format_func=lambda c: c or "none"
-        )
+        bar.selectbox("Run", runs, key="run_a")
     if "area" in controls:
         bar.selectbox("Bidding zone", list(run.buses.index), key="area")
     if "period" in controls:
@@ -181,7 +149,6 @@ def sidebar(runs: list[str]) -> Context:
     hours = period_hours(run, dates)
     return Context(
         run=run,
-        compare=comparison(st.session_state.run_b, run, runs),
         area=st.session_state.area,
         hours=hours,
         period=period_label(st.session_state.period, hours),
@@ -197,10 +164,11 @@ def sidebar(runs: list[str]) -> Context:
 
 def selection(ctx: Context, controls: list[str]) -> str:
     """The sidebar state a page uses as one line."""
-    run = ctx.run.name
-    if "run_b" in controls and ctx.compare is not None:
-        run += f" vs {ctx.compare.name}"
-    parts = [run, ctx.area if "area" in controls else "", ctx.period]
+    parts = [
+        ctx.run.name,
+        ctx.area if "area" in controls else "",
+        ctx.period if "period" in controls else "",
+    ]
     return " | ".join(p for p in parts if p) if controls else ""
 
 
@@ -214,14 +182,9 @@ if not runs:
     st.stop()
 context = sidebar(runs)
 page = st.session_state.page
-compare_name = context.compare.name if context.compare is not None else "run B"
 title, line = st.columns([3, 2], vertical_alignment="bottom")
 title.title(page)
 line.caption(selection(context, CONTROLS[page]), text_alignment="right")
-st.markdown(
-    QUESTIONS[page].format(
-        area=context.area, run=context.run.name, compare=compare_name
-    )
-)
+st.markdown(QUESTIONS[page].format(area=context.area, run=context.run.name))
 RENDER[st.session_state.page](context)
 sync_query_params()

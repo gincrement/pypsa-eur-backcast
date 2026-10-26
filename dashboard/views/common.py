@@ -7,20 +7,17 @@ Page context and Plotly helpers shared by the dashboard pages.
 
 import calendar
 from dataclasses import dataclass
-from typing import Any
 
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from dashboard.data import Comparison, RunData, area_metrics
-from dashboard.state import request
+from dashboard.data import RunData, area_metrics
 from scripts.lib.backcast_plotting import (
     DIVERGING,
     MODEL_COLOR,
     OBSERVED_COLOR,
-    SECOND_COLOR,
     SEQUENTIAL,
     ZONE_GROUPS,
     ZONE_ORDER,
@@ -41,7 +38,6 @@ class Line:
     name: str
     prices: pd.Series
     color: str
-    dash: str = "solid"
 
 
 @dataclass(frozen=True)
@@ -59,10 +55,9 @@ class Reference:
 
 @dataclass(frozen=True)
 class Context:
-    """Run A, the optional comparison and the sidebar selection."""
+    """Run and the sidebar selection."""
 
     run: RunData
-    compare: Comparison | None
     area: str
     hours: pd.DatetimeIndex
     period: str
@@ -75,37 +70,15 @@ class Context:
         """Representative bus of the selected area."""
         return self.run.buses[self.area]
 
-    @property
-    def same_year(self) -> bool:
-        """Whether the comparison covers the year of run A."""
-        return self.compare is not None and (
-            self.compare.run is None or self.compare.run.year == self.run.year
-        )
-
     def metrics(self) -> pd.DataFrame:
-        """Area metrics of run A in the period."""
+        """Area metrics of the run in the period."""
         return area_metrics(
             self.run.area_model.loc[self.hours], self.run.area_observed.loc[self.hours]
         )
 
     def bus_metrics(self) -> pd.DataFrame:
-        """Bus metrics of run A in the period, as in the evaluation rule."""
+        """Bus metrics of the run in the period, as in the evaluation rule."""
         return bus_metrics(self.run.model, self.run.observed, self.hours)
-
-    def compare_bus_metrics(self) -> pd.DataFrame:
-        """Bus metrics of a same-year comparison in the period."""
-        assert self.same_year
-        return bus_metrics(self.compare.model, self.run.observed, self.hours)
-
-    def compare_metrics(self) -> pd.DataFrame:
-        """Area metrics of the comparison in the period, or over its own year if it covers another year."""
-        assert self.compare is not None
-        if not self.same_year:
-            return full_year(self.compare.run)
-        model = self.compare.area_model(self.run.buses)
-        return area_metrics(
-            model.loc[self.hours], self.run.area_observed.loc[self.hours]
-        )
 
 
 def bus_metrics(
@@ -115,23 +88,9 @@ def bus_metrics(
     return area_metrics(model.loc[hours], observed.loc[hours]).rename_axis("bus")
 
 
-def full_year(run: RunData) -> pd.DataFrame:
-    """Area metrics of a run over its whole year."""
-    return area_metrics(run.area_model, run.area_observed)
-
-
-def takeaway(text: str, links: list[tuple[str, dict[str, Any]]] | None = None) -> None:
-    """Show the key finding of a page in a bordered box with a row of next-step buttons."""
+def takeaway(text: str) -> None:
+    """Show the key finding of a page in a bordered box."""
     st.container(border=True).markdown(text)
-    row = st.container(horizontal=True)
-    for label, updates in links or []:
-        if row.button(label, key=f"link_{label}"):
-            request(**updates)
-
-
-def zone_link(area: str, **updates: Any) -> tuple[str, dict[str, Any]]:
-    """Next-step button opening the zone detail of an area."""
-    return f"Zone detail: {area}", dict(area=area, page="Zone detail", **updates)
 
 
 def worst(values: pd.Series, n: int = 3, signed: bool = False) -> str:
@@ -217,11 +176,11 @@ def heatmap(
 
 
 def price_traces(
-    ctx: Context, model: pd.Series, observed: pd.Series, second: pd.Series | None
+    ctx: Context, model: pd.Series, observed: pd.Series
 ) -> list[go.Scatter]:
-    """Model, observed and second price lines, hovering the error."""
+    """Model and observed price lines, hovering the error."""
     error = (model - observed).to_numpy()
-    traces = [
+    return [
         go.Scatter(
             x=observed.index,
             y=observed,
@@ -237,17 +196,6 @@ def price_traces(
             hovertemplate="%{y:.1f} (error %{customdata:.1f})",
         ),
     ]
-    if second is not None:
-        name = ctx.compare.name
-        traces.append(
-            go.Scatter(
-                x=second.index,
-                y=second,
-                name=name,
-                line=dict(color=SECOND_COLOR, width=1),
-            )
-        )
-    return traces
 
 
 def event_markers(model: pd.Series, shedding: pd.Series) -> list[go.Scatter]:

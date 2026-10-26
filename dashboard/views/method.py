@@ -2,19 +2,18 @@
 #
 # SPDX-License-Identifier: MIT
 """
-Report: how the backcast works, how it is scored, headline results per run, limitations and refinement history.
+Method and headline results sections of the overview, and the run facts filling the prose.
 """
 
 import pandas as pd
 import streamlit as st
 
 from dashboard import narrative
-from dashboard.data import RunData, area_metrics, border_positions
+from dashboard.data import TOP_SHARE, RunData, area_metrics, border_positions
 from dashboard.views.common import Context, bus_metrics, worst
 from scripts.lib.backcast_data import top_errors
 from scripts.lib.backcast_plotting import ZONE_GROUPS
 
-TOP_SHARE = 0.05
 EXPORTER = "DE_LU"
 INTEGER_ROWS = ["year", "scored buses"]
 
@@ -82,11 +81,9 @@ def pipeline() -> None:
         box.markdown("\n".join(f"- {item}" for item in items))
 
 
-def render(ctx: Context) -> None:
-    """Draw the report page for run A and the cached runs of other years."""
-    runs = [ctx.run, *[ref.run for ref in ctx.references]]
-    table = pd.DataFrame({run.name: summary(run) for run in runs})
-    filled = facts(ctx.run, table[ctx.run.name].to_dict())
+def method() -> None:
+    """Draw what the backcast is, how it works and how it is scored."""
+    st.header("Method")
     st.subheader("What the backcast is")
     st.markdown(narrative.WHAT)
     st.subheader("How it works")
@@ -94,7 +91,14 @@ def render(ctx: Context) -> None:
     pipeline()
     st.subheader("How it is scored")
     st.markdown(narrative.SCORING)
-    st.subheader("Headline results")
+
+
+def headline_results(ctx: Context) -> None:
+    """Draw the whole-year results of the run and the cached runs of other years."""
+    runs = [ctx.run, *[ref.run for ref in ctx.references]]
+    table = pd.DataFrame({run.name: summary(run) for run in runs})
+    filled = facts(ctx.run, table[ctx.run.name].to_dict())
+    st.header("Headline results")
     st.caption(
         "Whole year per run, independent of the period in the sidebar. "
         f"Top {TOP_SHARE:.0%} hours are the most expensive observed hours of each bus."
@@ -104,7 +108,3 @@ def render(ctx: Context) -> None:
     st.table(shown)
     st.subheader("What works")
     st.markdown(narrative.WORKS.format(**filled))
-    st.subheader("Limitations")
-    st.markdown(narrative.LIMITATIONS.format(**filled))
-    st.subheader("Refinement history")
-    st.markdown(narrative.HISTORY)

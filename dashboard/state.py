@@ -14,7 +14,6 @@ from dashboard.views import PAGES
 DEFAULTS: dict[str, Any] = {
     "page": PAGES[0],
     "run_a": "",
-    "run_b": "",
     "area": "DE_LU",
     "period": "year",
     "start": "",

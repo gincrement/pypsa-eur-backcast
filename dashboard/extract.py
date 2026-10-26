@@ -26,7 +26,7 @@ from scripts.lib.entsoe import read_area_to_bus
 
 CACHE = Path(__file__).parent / "cache"
 SIMPLIFY_TOLERANCE = 0.01
-POWER_FRAMES = {"load", "generation", "flows", "hydro"}
+POWER_FRAMES = {"load", "generation", "flows"}
 
 
 def run_config(run: str) -> dict:
@@ -77,22 +77,6 @@ def load_frame(n: pypsa.Network) -> pd.DataFrame:
         },
         axis=1,
         names=["kind", "bus"],
-    )
-
-
-def hydro_frame(n: pypsa.Network, area_to_bus: pd.Series) -> pd.DataFrame:
-    """Return the hourly reservoir state of charge and inflow of hydro units per area."""
-    hydro = n.storage_units.query("carrier == 'hydro'")
-    areas = hydro.bus.map(area_to_bus)
-    inflow = n.get_switchable_as_dense("StorageUnit", "inflow")[hydro.index]
-    frames = {
-        "state_of_charge": n.storage_units_t.state_of_charge[hydro.index],
-        "inflow": inflow,
-    }
-    return pd.concat(
-        {kind: df.T.groupby(areas).sum().T for kind, df in frames.items()},
-        axis=1,
-        names=["kind", "area"],
     )
 
 
@@ -158,7 +142,6 @@ def extract(paths: dict[str, Path], out_dir: Path, run: str) -> None:
             axis=1,
             names=["source", "border"],
         ),
-        "hydro": hydro_frame(n, area_to_bus),
         "marginal": marginal_carriers(n)[observed.columns].astype("category"),
         "metrics": pd.read_csv(paths["metrics"], index_col=0),
         "monthly_bias": pd.read_csv(paths["monthly_bias"], index_col=0),

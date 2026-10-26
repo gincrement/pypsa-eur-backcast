@@ -33,7 +33,6 @@ FILES = {
     "load",
     "generation",
     "flows",
-    "hydro",
     "marginal",
     "metrics",
     "monthly_bias",
@@ -202,26 +201,6 @@ def test_worst_hours_window(errors, expected):
     assert data.worst_hours(pd.Series(errors, dtype=float)) == expected
 
 
-def test_discover_and_load_variants(tmp_path, run_dir):
-    observed = data.load_run(run_dir).observed
-    for name in ["prices_base.csv", "prices_wind_2019.csv"]:
-        (tmp_path / "exp").mkdir(exist_ok=True)
-        observed.to_csv(tmp_path / "exp" / name)
-
-    variants = data.discover_variants(tmp_path)
-
-    assert list(variants) == ["exp/base", "exp/wind_2019"]
-    assert data.variant_year(variants["exp/wind_2019"]) == 2019
-    pd.testing.assert_frame_equal(
-        data.load_variant(variants["exp/base"], observed),
-        observed,
-        check_freq=False,
-        check_index_type=False,
-    )
-    with pytest.raises(AssertionError, match="covers"):
-        data.load_variant(variants["exp/wind_2019"], observed)
-
-
 def test_level_and_border_tables(run_dir):
     run = data.load_run(run_dir)
     error = run.area_model - run.area_observed
@@ -229,7 +208,7 @@ def test_level_and_border_tables(run_dir):
     levels = data.level_errors(error, run.area_observed)
     positions = data.border_positions(run.flows, "FR", HOURS)
 
-    assert levels.columns.tolist() == [*range(1, 11), "top 1%"]
+    assert levels.columns.tolist() == [*range(1, 11), "top 5%"]
     assert positions.loc[HOURS[0]].to_dict() == {
         ("DE_LU", "model"): -1.0,
         ("DE_LU", "scheduled"): -1.0,
@@ -243,7 +222,6 @@ def app_test(cache: Path, monkeypatch, **params: str):
     from streamlit.testing.v1 import AppTest
 
     monkeypatch.setattr(data, "CACHE", cache)
-    monkeypatch.setattr(data, "VARIANTS", cache / "none")
     streamlit.cache_data.clear()
     app = AppTest.from_file(
         str(Path(data.__file__).parent / "app.py"), default_timeout=60
@@ -275,27 +253,28 @@ def test_overview_scores_validation_run_over_same_period(validation_cache, monke
 
 
 @pytest.mark.slow
-def test_zone_link_opens_dispatch_and_hidden_state_survives(run_dir, monkeypatch):
+def test_page_buttons_switch_page_and_hidden_state_survives(run_dir, monkeypatch):
     app = app_test(
-        run_dir.parent, monkeypatch, page="Zone detail", area="FR", agg="daily"
+        run_dir.parent, monkeypatch, page="Bidding zone", area="FR", agg="daily"
     )
-    app.button(key="link_Dispatch and flows for FR").click().run()
     shown = [s.label for s in app.selectbox]
-    app.radio(key="page").set_value("Report").run()
-    hidden = len(app.selectbox)
-    app.radio(key="page").set_value("Zone detail").run()
+    app.button(key="page_Limitations").click().run()
+    hidden = [s.label for s in app.selectbox]
+    app.button(key="page_Bidding zone").click().run()
 
     assert not app.exception
-    assert shown == ["Run A", "Bidding zone", "Period"] and hidden == 0
+    assert shown == ["Run", "Bidding zone", "Period"] and hidden == ["Run"]
+    assert app.session_state["page"] == "Bidding zone"
     assert app.session_state["area"] == "FR" and app.session_state["agg"] == "daily"
 
 
 @pytest.mark.slow
-def test_report_page_fills_results_and_limitations(run_dir, monkeypatch):
-    app = app_test(run_dir.parent, monkeypatch, page="Report")
+def test_overview_and_limitations_fill_results(run_dir, monkeypatch):
+    overview = app_test(run_dir.parent, monkeypatch, page="Overview")
+    limitations = app_test(run_dir.parent, monkeypatch, page="Limitations")
 
-    text = " ".join(m.value for m in app.markdown)
-    assert not app.exception
-    assert [h.value for h in app.subheader][-1] == "Refinement history"
-    assert app.table[0].value.columns.tolist() == ["test-run"]
+    text = " ".join(m.value for m in limitations.markdown)
+    assert not overview.exception and not limitations.exception
+    assert overview.table[0].value.columns.tolist() == ["test-run"]
+    assert [h.value for h in limitations.subheader][-1] == "Refinement history"
     assert "{" not in text and "test-run" in text

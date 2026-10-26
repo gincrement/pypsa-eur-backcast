@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 """
-Error patterns: error heatmaps by area and month, observed price level and hour of day.
+Error patterns section of the overview: error heatmaps by area and month, observed price level and hour of day.
 """
 
 import pandas as pd
@@ -10,14 +10,7 @@ import streamlit as st
 
 from dashboard.data import MONTH_NAMES, TOP_SHARE, level_errors, month_errors
 from dashboard.state import follow_selection
-from dashboard.views.common import (
-    MONTHS,
-    Context,
-    heatmap,
-    show,
-    takeaway,
-    zone_link,
-)
+from dashboard.views.common import MONTHS, Context, heatmap, show, takeaway
 from scripts.lib.backcast_data import hourly_errors
 from scripts.lib.backcast_plotting import SEASONS
 
@@ -44,18 +37,8 @@ def lead(
     )
 
 
-def links(by_month: dict[str, pd.DataFrame], levels: pd.DataFrame) -> list:
-    """Zone detail of the worst zone in the worst month and of the largest error in the cheapest hours."""
-    mae = by_month["MAE"]
-    month = mae.median().idxmax()
-    return [
-        zone_link(mae[month].idxmax(), period=MONTH_NAMES[month - 1]),
-        zone_link(levels["D1"].abs().idxmax()),
-    ]
-
-
-def render(ctx: Context) -> None:
-    """Draw the error patterns page, a click on a cell opens the zone detail of its area."""
+def error_patterns(ctx: Context) -> None:
+    """Draw the error patterns section, a click on a cell opens the bidding zone of its area."""
     error = ctx.run.area_model - ctx.run.area_observed
     by_month = {
         name: table.set_axis(table.columns.month, axis=1)
@@ -69,7 +52,8 @@ def render(ctx: Context) -> None:
         "MAE": level_errors(period.abs(), observed).set_axis(columns, axis=1),
     }
     hours = {season: hourly_errors(error, months) for season, months in SEASONS.items()}
-    takeaway(lead(by_month, levels["bias"], hours), links(by_month, levels["bias"]))
+    st.header("Error patterns")
+    takeaway(lead(by_month, levels["bias"], hours))
     name = (
         st.segmented_control(
             "Metric of both maps", ["bias", "MAE"], default="bias", key="month_metric"
@@ -97,7 +81,7 @@ def render(ctx: Context) -> None:
             cell,
             area=cell and cell[0],
             period=cell and MONTH_NAMES[MONTHS.index(cell[1])],
-            page="Zone detail",
+            page="Bidding zone",
         )
     with right:
         st.subheader("By observed price level")
@@ -122,6 +106,6 @@ def render(ctx: Context) -> None:
 
 
 def follow_zone(key: str, points: list[dict]) -> None:
-    """Open the zone detail of the area of the selected heatmap cell."""
+    """Open the bidding zone of the area of the selected heatmap cell."""
     area = points[0]["customdata"][0] if points else None
-    follow_selection(key, area, area=area, page="Zone detail")
+    follow_selection(key, area, area=area, page="Bidding zone")

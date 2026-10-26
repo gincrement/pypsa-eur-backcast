@@ -4,20 +4,16 @@
 """Pages of the backcast dashboard in story order with the question each answers."""
 
 QUESTIONS = {
-    "Report": "How does the backcast work, how good is it and where does it fall short?",
-    "Overview": "How good is the backcast, and in which bidding zones does it fail?",
-    "Error patterns": "When does it fail: in which months, hours and price levels?",
-    "Zone detail": "How do modelled and observed prices compare in {area}?",
-    "Dispatch and flows": "Why: what sets the price in {area} and how does it trade?",
-    "Compare runs": "What changed between {run} and {compare}?",
+    "Overview": "How does the backcast work, how good is it, and where and when does it fail?",
+    "Bidding zone": "How do modelled prices and dispatch in {area} compare with ENTSO-E?",
+    "Cross border flows": "How do the modelled exchanges of {area} compare with the ENTSO-E scheduled exchanges?",
+    "Limitations": "Where does the backcast fall short, and which refinements were tested?",
 }
 PAGES = list(QUESTIONS)
-RUN = ["run_a", "run_b", "period"]
+ZONE = ["run_a", "area", "period", "agg"]
 CONTROLS = {
-    "Report": [],
-    "Overview": RUN,
-    "Error patterns": ["run_a", "period"],
-    "Zone detail": [*RUN, "area", "agg"],
-    "Dispatch and flows": ["run_a", "area", "period", "agg"],
-    "Compare runs": [*RUN, "area", "agg"],
+    "Overview": ["run_a", "period"],
+    "Bidding zone": ZONE,
+    "Cross border flows": ZONE,
+    "Limitations": ["run_a"],
 }

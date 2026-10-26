@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 """
-Static prose of the report page, placeholders in braces are filled from the selected run.
+Static prose of the overview and limitations pages, placeholders in braces are filled from the selected run.
 """
 
 WHAT = """
@@ -63,14 +63,14 @@ WORKS = """
 LIMITATIONS = """
 | Limitation | Evidence in {run} | Where to look |
 |---|---|---|
-| Price spikes are too low. Real bids carry markups (scarcity rent, start-up costs) that a cost-based model cannot produce. | mean error in the 5 % most expensive hours: {top5} €/MWh (median over buses) | Error patterns, by price level |
+| Price spikes are too low. Real bids carry markups (scarcity rent, start-up costs) that a cost-based model cannot produce. | mean error in the 5 % most expensive hours: {top5} €/MWh (median over buses) | Overview, by price level |
 | No hours at or below 0 €/MWh. Nuclear, biomass and Nordic reservoir hydro throttle at a positive cost and absorb every surplus; flexibility limits are missing. | hours ≤ 0: {nonpositive_observed} observed vs {nonpositive_model} modelled (mean over buses) | Overview, metric table |
-| Germany exports too much. | net export {de_model} TWh modelled vs {de_scheduled} TWh scheduled | Dispatch and flows, zone DE_LU |
+| Germany exports too much. | net export {de_model} TWh modelled vs {de_scheduled} TWh scheduled | Cross border flows, zone DE_LU |
 | Some zones carry a large level error: Italy is too expensive, Finland too cheap. | bias Italy {italy_bias}, FI {fi_bias} €/MWh | Overview, map metric bias |
-| The Baltics and other edge zones miss the daily shape. Cheap night imports from flat Nordic prices compress the profile. | largest MAE: {worst_mae} | Zone detail |
-| The south-east chain (HU, SK, HR) shares one price more often than the market does. | | Dispatch and flows, cross-border exchange |
-| Hydro inflow and its split between zones of one country (SE, NO, IT) is uncertain. Reservoirs have no water values from observed filling levels. | | Dispatch and flows, hydro state of charge |
-| Plant data has gaps; Dutch gas plants needed local corrections. Gas prices are monthly, not daily. There is no unit commitment or ramping. | | Dispatch and flows, energy per carrier |
+| The Baltics and other edge zones miss the daily shape. Cheap night imports from flat Nordic prices compress the profile. | largest MAE: {worst_mae} | Bidding zone |
+| The south-east chain (HU, SK, HR) shares one price more often than the market does. | | Cross border flows |
+| Hydro inflow and its split between zones of one country (SE, NO, IT) is uncertain. Reservoirs have no water values from observed filling levels. | | Bidding zone, energy per carrier |
+| Plant data has gaps; Dutch gas plants needed local corrections. Gas prices are monthly, not daily. There is no unit commitment or ramping. | | Bidding zone, energy per carrier |
 """
 
 HISTORY = """

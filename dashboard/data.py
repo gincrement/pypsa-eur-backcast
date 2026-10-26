@@ -2,18 +2,17 @@
 #
 # SPDX-License-Identifier: MIT
 """
-Loaders of the dashboard extracts and research variants and pure derived frames.
+Loaders of the dashboard extracts and pure derived frames.
 """
 
 import calendar
 import json
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import pandas as pd
 
-from scripts.evaluate_price_backcast import align_prices, price_metrics
+from scripts.evaluate_price_backcast import price_metrics
 from scripts.lib.backcast_data import decile_errors, monthly_mae, top_errors
 from scripts.lib.backcast_plotting import (
     area_prices,
@@ -23,12 +22,10 @@ from scripts.lib.backcast_plotting import (
 
 ROOT = Path(__file__).parent.parent
 CACHE = Path(__file__).parent / "cache"
-VARIANTS = ROOT / "dev/day-ahead-backcast/phase3"
-DEFAULT_YEAR = 2023
 MONTH_NAMES = list(calendar.month_name)[1:]
 PERIODS = ["year", *MONTH_NAMES, "winter week", "summer week", "custom"]
 AGGREGATIONS = {"hourly": None, "daily": "D"}
-TOP_SHARE = 0.01
+TOP_SHARE = 0.05
 KPIS = {
     "MAE": ("mae", "median"),
     "MAE / mean": ("rel_mae", "median"),
@@ -47,7 +44,6 @@ class RunData:
     load: pd.DataFrame
     generation: pd.DataFrame
     flows: pd.DataFrame
-    hydro: pd.DataFrame
     marginal: pd.DataFrame
     metrics: pd.DataFrame
     monthly_bias: pd.DataFrame
@@ -81,24 +77,11 @@ class RunData:
         return select_weeks(self.area_observed.iloc[:, 0])
 
 
-@dataclass(frozen=True)
-class Comparison:
-    """Second price series compared to run A: another run or a price-only variant aligned to run A."""
-
-    name: str
-    model: pd.DataFrame
-    run: RunData | None
-
-    def area_model(self, buses: pd.Series) -> pd.DataFrame:
-        """Hourly prices per area."""
-        return area_prices(self.model, buses)
-
-
 def load_run(path: Path) -> RunData:
     """Read the extract of a run."""
     frames = {
         name: pd.read_parquet(path / f"{name}.parquet")
-        for name in ["prices", "load", "generation", "flows", "hydro", "marginal"]
+        for name in ["prices", "load", "generation", "flows", "marginal"]
     }
     frames["metrics"] = pd.read_parquet(path / "metrics.parquet")
     monthly = pd.read_parquet(path / "monthly_bias.parquet")
@@ -118,26 +101,6 @@ def load_run(path: Path) -> RunData:
 def discover_runs(cache: Path) -> list[str]:
     """List the runs with an extract in the cache."""
     return sorted(p.parent.name for p in cache.glob("*/manifest.json"))
-
-
-def variant_year(path: Path) -> int:
-    """Year of a variant price file from its ``_YYYY`` suffix, else the default year."""
-    match = re.search(r"_(\d{4})$", path.stem)
-    return int(match.group(1)) if match else DEFAULT_YEAR
-
-
-def discover_variants(root: Path) -> dict[str, Path]:
-    """Map variant ids ``<experiment>/<name>`` to their price files."""
-    paths = sorted(root.glob("*/prices_*.csv"))
-    return {f"{p.parent.name}/{p.stem.removeprefix('prices_')}": p for p in paths}
-
-
-def load_variant(path: Path, observed: pd.DataFrame) -> pd.DataFrame:
-    """Read the bus prices of a variant aligned to the observed prices of its year."""
-    prices = pd.read_csv(path, index_col=0, parse_dates=True)
-    years = set(prices.index.year)
-    assert years == {variant_year(path)}, f"{path} covers {years}"
-    return align_prices(prices, observed)[0]
 
 
 def stale_sources(manifest: dict) -> list[str]:
@@ -198,7 +161,7 @@ def month_errors(error: pd.DataFrame) -> dict[str, pd.DataFrame]:
 
 
 def level_errors(error: pd.DataFrame, observed: pd.DataFrame) -> pd.DataFrame:
-    """Mean error per area and observed price decile with the top 1 % hours."""
+    """Mean error per area and observed price decile with the top share of hours."""
     top = top_errors(error, observed, TOP_SHARE).rename(f"top {TOP_SHARE:.0%}")
     return decile_errors(error, observed).join(top)
 
