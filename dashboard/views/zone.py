@@ -67,9 +67,7 @@ def hourly_line(ctx: Context) -> go.Figure:
 def period_lines(ctx: Context) -> list[Line]:
     """Observed and model prices of the area in the period."""
     return [
-        Line(
-            "observed", ctx.run.area_observed.loc[ctx.hours, ctx.area], OBSERVED_COLOR
-        ),
+        Line("market", ctx.run.area_observed.loc[ctx.hours, ctx.area], OBSERVED_COLOR),
         Line(ctx.run.name, ctx.run.area_model.loc[ctx.hours, ctx.area], MODEL_COLOR),
     ]
 

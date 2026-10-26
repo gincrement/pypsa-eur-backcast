@@ -16,7 +16,8 @@ from shapely.geometry import box
 
 from dashboard import data
 from dashboard.extract import extract
-from dashboard.views import PAGES
+from dashboard.narrative import NAMES
+from dashboard.views import METHOD_PAGE, PAGES, STORY_PAGE, ZONE_PAGE
 from scripts.lib.backcast_data import (
     NO_MARGINAL,
     area_capacities,
@@ -27,6 +28,7 @@ from scripts.lib.backcast_data import (
     stacked_generation,
     top_errors,
 )
+from scripts.lib.backcast_plotting import ZONE_ORDER
 
 HOURS = pd.date_range("2023-01-01", "2023-12-31 23:00", freq="h")
 AREA_TO_BUS = pd.Series({"DE00": "DE_LU", "FR00": "FR"}, name="entsoe_area")
@@ -230,6 +232,52 @@ def test_level_and_border_tables(run_dir):
     }
 
 
+@pytest.mark.parametrize(
+    "negative, expected", [(True, "2023-01-09"), (False, "2023-01-02")]
+)
+def test_hero_week_prefers_widest_week_with_nonpositive_hour(negative, expected):
+    prices = pd.Series(50.0, HOURS)
+    prices["2023-01-01 12:00"] = 900.0
+    prices["2023-01-03 12:00"] = 300.0
+    prices["2023-01-10 12:00"] = 150.0
+    prices["2023-01-11 03:00"] = -10.0 if negative else 40.0
+
+    week = data.hero_week(prices)
+
+    assert week[0] == pd.Timestamp(expected) and len(week) == data.WEEK_HOURS
+
+
+def test_puzzle_tables_order_areas_worst_first():
+    index = pd.date_range("2023-01-01", periods=20, freq="h")
+    observed = pd.DataFrame(
+        {"A": [100.0] + [10.0] * 19, "B": [-5.0, 200.0] + [10.0] * 18}, index
+    )
+    model = pd.DataFrame(
+        {"A": [40.0] + [10.0] * 19, "B": [5.0, 150.0] + [12.0] * 18}, index
+    )
+
+    tables = data.puzzle_tables(model, observed)
+
+    assert tables["spikes"].model.to_dict() == {"A": -60.0, "B": -50.0}
+    assert tables["negative"].to_dict("index") == {
+        "B": {"market": 0.05, "model": 0.0},
+        "A": {"market": 0.0, "model": 0.0},
+    }
+    assert tables["cheap"].index.tolist() == ["A", "B"]
+
+
+def test_net_export(run_dir):
+    run = data.load_run(run_dir)
+
+    assert data.net_export(run.flows, "FR", HOURS).to_dict() == pytest.approx(
+        {"model": -len(HOURS) / 1e6, "scheduled": -len(HOURS) / 1e6}
+    )
+
+
+def test_zone_names_cover_zone_order():
+    assert set(NAMES) == set(ZONE_ORDER)
+
+
 def app_test(cache: Path, monkeypatch, **params: str):
     streamlit = pytest.importorskip("streamlit")
     from streamlit.testing.v1 import AppTest
@@ -254,9 +302,9 @@ def test_app_renders_pages_and_keeps_state(run_dir, monkeypatch, page):
 
 
 @pytest.mark.slow
-def test_overview_scores_validation_run_over_same_period(validation_cache, monkeypatch):
+def test_story_scores_validation_run_over_same_period(validation_cache, monkeypatch):
     app = app_test(
-        validation_cache, monkeypatch, page="Overview", run_a="test-run", period="March"
+        validation_cache, monkeypatch, page=STORY_PAGE, run_a="test-run", period="March"
     )
 
     text = " ".join(m.value for m in app.markdown)
@@ -267,27 +315,26 @@ def test_overview_scores_validation_run_over_same_period(validation_cache, monke
 
 @pytest.mark.slow
 def test_page_buttons_switch_page_and_hidden_state_survives(run_dir, monkeypatch):
-    app = app_test(
-        run_dir.parent, monkeypatch, page="Bidding zone", area="FR", agg="daily"
-    )
+    app = app_test(run_dir.parent, monkeypatch, page=ZONE_PAGE, area="FR", agg="daily")
     shown = [s.label for s in app.selectbox]
-    app.button(key="page_Limitations").click().run()
+    app.button(key=f"page_{METHOD_PAGE}").click().run()
     hidden = [s.label for s in app.selectbox]
-    app.button(key="page_Bidding zone").click().run()
+    app.button(key=f"page_{ZONE_PAGE}").click().run()
 
     assert not app.exception
     assert shown == ["Run", "Bidding zone", "Period"] and hidden == ["Run"]
-    assert app.session_state["page"] == "Bidding zone"
+    assert app.session_state["page"] == ZONE_PAGE
     assert app.session_state["area"] == "FR" and app.session_state["agg"] == "daily"
 
 
 @pytest.mark.slow
-def test_overview_and_limitations_fill_results(run_dir, monkeypatch):
-    overview = app_test(run_dir.parent, monkeypatch, page="Overview")
-    limitations = app_test(run_dir.parent, monkeypatch, page="Limitations")
+def test_story_falls_back_and_how_it_works_fills_results(run_dir, monkeypatch):
+    story = app_test(run_dir.parent, monkeypatch, page="Overview")
+    method = app_test(run_dir.parent, monkeypatch, page=METHOD_PAGE)
 
-    text = " ".join(m.value for m in limitations.markdown)
-    assert not overview.exception and not limitations.exception
-    assert overview.table[0].value.columns.tolist() == ["test-run"]
-    assert [h.value for h in limitations.subheader][-1] == "Refinement history"
+    text = " ".join(m.value for m in [*story.markdown, *method.markdown])
+    assert not story.exception and not method.exception
+    assert story.session_state["page"] == STORY_PAGE
+    assert method.table[0].value.columns.tolist() == ["test-run"]
+    assert [h.value for h in method.header][-1] == "How the model got better"
     assert "{" not in text and "test-run" in text

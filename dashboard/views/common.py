@@ -14,6 +14,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from dashboard.data import RunData, area_metrics
+from dashboard.narrative import NAMES
 from scripts.lib.backcast_plotting import (
     DIVERGING,
     MODEL_COLOR,
@@ -88,6 +89,11 @@ def bus_metrics(
     return area_metrics(model.loc[hours], observed.loc[hours]).rename_axis("bus")
 
 
+def zone_label(area: str) -> str:
+    """Plain name of an area with its code."""
+    return f"{NAMES[area]} ({area})"
+
+
 def takeaway(text: str) -> None:
     """Show the key finding of a page in a bordered box."""
     st.container(border=True).markdown(text)
@@ -97,7 +103,12 @@ def worst(values: pd.Series, n: int = 3, signed: bool = False) -> str:
     """List the areas with the largest absolute values and their values."""
     top = values.abs().nlargest(n).index if signed else values.nlargest(n).index
     template = "{:+.1f}" if signed else "{:.1f}"
-    return ", ".join(f"{a} ({template.format(values[a])})" for a in top)
+    return ", ".join(f"{NAMES[a]} ({template.format(values[a])})" for a in top)
+
+
+def export_direction(model: float, scheduled: float) -> str:
+    """Whether the model exports too much or too little compared with the schedule."""
+    return "too much" if model > scheduled else "too little"
 
 
 def zone_height(rows: int) -> int:
@@ -184,7 +195,7 @@ def price_traces(
         go.Scatter(
             x=observed.index,
             y=observed,
-            name="observed",
+            name="market",
             line=dict(color=OBSERVED_COLOR, width=1),
         ),
         go.Scatter(

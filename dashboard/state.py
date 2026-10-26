@@ -52,6 +52,11 @@ def sync_query_params() -> None:
     st.query_params.from_dict({k: str(v) for k, v in state.items() if v != DEFAULTS[k]})
 
 
+def open_page(page: str, **updates: Any) -> None:
+    """Switch to a page with updated state, as a widget callback."""
+    st.session_state.update(page=page, **updates)
+
+
 def follow_selection(key: str, selection: Any, **updates: Any) -> None:
     """Apply the updates once when the selection of a chart changes to a new value, None clears it."""
     last = f"_selection_{key}"

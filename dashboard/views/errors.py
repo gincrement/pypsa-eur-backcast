@@ -2,14 +2,16 @@
 #
 # SPDX-License-Identifier: MIT
 """
-Error patterns section of the overview: error heatmaps by area and month, observed price level and hour of day.
+Error patterns section of the story: error heatmaps by area and month, observed price level and hour of day.
 """
 
 import pandas as pd
 import streamlit as st
 
+from dashboard import narrative
 from dashboard.data import MONTH_NAMES, TOP_SHARE, level_errors, month_errors
 from dashboard.state import follow_selection
+from dashboard.views import ZONE_PAGE
 from dashboard.views.common import MONTHS, Context, heatmap, show, takeaway
 from scripts.lib.backcast_data import hourly_errors
 from scripts.lib.backcast_plotting import SEASONS
@@ -52,7 +54,8 @@ def error_patterns(ctx: Context) -> None:
         "MAE": level_errors(period.abs(), observed).set_axis(columns, axis=1),
     }
     hours = {season: hourly_errors(error, months) for season, months in SEASONS.items()}
-    st.header("Error patterns")
+    st.header("When does it miss?")
+    st.markdown(narrative.MISSES)
     takeaway(lead(by_month, levels["bias"], hours))
     name = (
         st.segmented_control(
@@ -81,7 +84,7 @@ def error_patterns(ctx: Context) -> None:
             cell,
             area=cell and cell[0],
             period=cell and MONTH_NAMES[MONTHS.index(cell[1])],
-            page="Bidding zone",
+            page=ZONE_PAGE,
         )
     with right:
         st.subheader("By observed price level")
@@ -108,4 +111,4 @@ def error_patterns(ctx: Context) -> None:
 def follow_zone(key: str, points: list[dict]) -> None:
     """Open the bidding zone of the area of the selected heatmap cell."""
     area = points[0]["customdata"][0] if points else None
-    follow_selection(key, area, area=area, page="Bidding zone")
+    follow_selection(key, area, area=area, page=ZONE_PAGE)

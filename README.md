@@ -47,7 +47,7 @@ pixi run -e dashboard backcast-dashboard                       # streamlit run d
 
 The results are published as an interactive dashboard at <https://pypsa-eur-backcast.streamlit.app/>.
 It compares modelled prices, dispatch and cross-border exchanges with ENTSO-E data per bidding zone.
-The pages are Overview, Bidding zone, Cross border flows and Limitations.
+The pages are The story, Explore a country, Trade between countries and How it works.
 
 The app (`dashboard/app.py`) runs on Streamlit Community Cloud from the branch `master`.
 Code changes pushed to that branch are deployed automatically.

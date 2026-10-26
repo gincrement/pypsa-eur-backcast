@@ -2,8 +2,10 @@
 #
 # SPDX-License-Identifier: MIT
 """
-Overview: method, whole-year headline results, accuracy per bidding zone and error patterns.
+The story: hero week, big numbers, accuracy per bidding zone, four puzzles, error patterns and a call to action.
 """
+
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
@@ -11,10 +13,29 @@ import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 
-from dashboard.data import KPIS, kpis
-from dashboard.state import follow_selection
-from dashboard.views import errors, method
-from dashboard.views.common import Context, show, takeaway, worst, zone_layout
+from dashboard import narrative
+from dashboard.data import (
+    KPIS,
+    TOP_SHARE,
+    RunData,
+    hero_week,
+    kpis,
+    net_export,
+    puzzle_tables,
+)
+from dashboard.state import follow_selection, open_page
+from dashboard.views import FLOWS_PAGE, ZONE_PAGE, errors
+from dashboard.views.common import (
+    CHART_HEIGHT,
+    Context,
+    export_direction,
+    price_traces,
+    show,
+    worst,
+    zone_label,
+    zone_layout,
+)
+from dashboard.views.method import EXPORTER
 from scripts.lib.backcast_data import price_metrics
 from scripts.lib.backcast_plotting import (
     BAND_COLOR,
@@ -35,6 +56,10 @@ MAP_METRICS = {
 }
 DEFAULT_MAP = "MAE (€/MWh)"
 DIVERGING_METRICS = {"mean_bias"}
+NEGATIVE_AREA = "DE_LU"
+CARD_ZONES = 6
+CARD_HEIGHT = 220
+CARD_COLORS = {"market": OBSERVED_COLOR, "model": MODEL_COLOR}
 TABLE_COLUMNS = {
     "mae": "MAE",
     "mean_bias": "bias",
@@ -46,6 +71,19 @@ TABLE_COLUMNS = {
     "nonpositive_observed": "hours ≤ 0 observed",
     "nonpositive_model": "hours ≤ 0 model",
 }
+
+
+@dataclass(frozen=True)
+class Puzzle:
+    """One puzzle card: plain question, answer filled from the run, chart data and the page its button opens."""
+
+    question: str
+    answer: str
+    chart: pd.DataFrame
+    unit: str
+    action: str
+    page: str
+    area: str
 
 
 def formatted(name: str, value: float) -> str:
@@ -148,7 +186,7 @@ def bars(metrics: pd.DataFrame, label: str, area: str) -> go.Figure:
             col=1,
         )
     for column, color, name in [
-        ("mean_observed", OBSERVED_COLOR, "observed"),
+        ("mean_observed", OBSERVED_COLOR, "market"),
         ("mean_model", MODEL_COLOR, label),
     ]:
         fig.add_scatter(
@@ -184,19 +222,104 @@ def bars(metrics: pd.DataFrame, label: str, area: str) -> go.Figure:
     return fig
 
 
+def hero_chart(ctx: Context, week: pd.DatetimeIndex) -> go.Figure:
+    """Model and observed prices of the area in the week with the spike and the lowest hour at or below 0 €/MWh annotated."""
+    model = ctx.run.area_model.loc[week, ctx.area]
+    observed = ctx.run.area_observed.loc[week, ctx.area]
+    fig = go.Figure(price_traces(ctx, model, observed))
+    peak, low = observed.idxmax(), observed.idxmin()
+    notes = {peak: ("spikes to", "reaches", -40)}
+    if observed[low] <= 0:
+        notes[low] = ("drops to", "stays at", 40)
+    for hour, (market, response, shift) in notes.items():
+        fig.add_annotation(
+            x=hour,
+            y=observed[hour],
+            text=f"Market {market} {observed[hour]:.0f} €/MWh,<br>the model {response} {model[hour]:.0f}",
+            ay=shift,
+            showarrow=True,
+            arrowhead=2,
+        )
+    fig.update_layout(
+        height=CHART_HEIGHT,
+        hovermode="x unified",
+        yaxis_title="€/MWh",
+        margin=dict(t=30, b=30),
+        legend=dict(orientation="h", y=1.08, x=0),
+    )
+    return fig
+
+
+def hero(ctx: Context) -> None:
+    """Draw the plain explanation and the hero week of the area."""
+    st.markdown(narrative.HERO.format(year=ctx.run.year))
+    week = hero_week(ctx.run.area_observed[ctx.area])
+    st.plotly_chart(hero_chart(ctx, week), width="stretch")
+    st.caption(narrative.HERO_CHART.format(area=zone_label(ctx.area), start=week[0]))
+
+
+def big_numbers(ctx: Context) -> None:
+    """Draw zones covered, shape match and typical hourly miss of the period with the validation runs as caption."""
+    values = kpis(ctx.bus_metrics())
+    zones, shape, gap = st.columns(3)
+    zones.metric(
+        "Bidding zones covered",
+        len(ctx.metrics()),
+        help="A bidding zone is a market area with one power price, mostly one country.",
+    )
+    shape.metric(
+        "How well the hourly shape matches (r)",
+        f"{values['r']:.2f}",
+        help="Pearson r, median over model buses: 1 means the model follows every up and down of the market price, 0 means no match.",
+    )
+    gap.metric(
+        "Typical hourly miss",
+        f"{values['MAE']:.1f} €/MWh",
+        help="Mean absolute error, median over model buses: the average gap between model and market price.",
+    )
+    notes = [f"{ctx.run.name}, {ctx.period}."]
+    for ref in ctx.references:
+        checked = kpis(ref.bus_metrics())
+        notes.append(
+            f"Validation year {ref.run.year}, {ref.period}: shape match {checked['r']:.2f}, "
+            f"typical miss {checked['MAE']:.1f} €/MWh."
+        )
+    st.caption(" ".join(notes))
+
+
+def pick_country(ctx: Context) -> None:
+    """Draw a zone selector with a button that opens the zone page."""
+    st.header("Pick your country")
+    areas = list(ctx.run.buses.index)
+    left, right = st.columns([3, 1], vertical_alignment="bottom")
+    area = left.selectbox(
+        narrative.PICK, areas, index=areas.index(ctx.area), format_func=zone_label
+    )
+    right.button(
+        "Explore",
+        key="pick_country",
+        type="primary",
+        width="stretch",
+        on_click=open_page,
+        args=(ZONE_PAGE,),
+        kwargs=dict(area=area),
+    )
+
+
+def where_lead(metrics: pd.DataFrame, period: str) -> str:
+    """Name the zones with the smallest and largest MAE."""
+    best = ", ".join(
+        f"{narrative.NAMES[a]} ({v:.1f})" for a, v in metrics.mae.nsmallest(3).items()
+    )
+    return narrative.WHERE.format(best=best, worst=worst(metrics.mae), period=period)
+
+
 def accuracy(ctx: Context) -> None:
-    """Draw the headline numbers, map and per-zone bars of the period, a click on a zone opens it."""
+    """Draw the map and per-zone bars of the period with the definitions and metric table in expanders, a click on a zone opens it."""
     metrics = ctx.metrics()
     buses = ctx.bus_metrics()
-    st.header("Accuracy by bidding zone")
-    takeaway(lead(ctx, buses, metrics))
-    st.caption(
-        "Headline numbers: median over model buses, as in price_metrics.csv. "
-        "MAE and |bias| in €/MWh, MAE / mean relative to the mean observed price, r Pearson correlation."
-    )
-    kpi_row(f"{ctx.run.name}, {ctx.period}", buses)
-    for ref in ctx.references:
-        kpi_row(f"validation {ref.run.name}, {ref.period}", ref.bus_metrics())
+    st.header("Where it works")
+    st.markdown(where_lead(metrics, ctx.period))
     left, right = st.columns(2)
     with left:
         name = st.segmented_control(
@@ -205,13 +328,18 @@ def accuracy(ctx: Context) -> None:
         points = show(
             zone_map(ctx, MAP_METRICS[name or DEFAULT_MAP]), "zone_map", select=True
         )
-        st.caption("Click a region or a bar to open the bidding zone.")
     with right:
         points += show(
             bars(metrics, ctx.run.name, ctx.area), "overview_bars", select=True
         )
     area = points[0]["customdata"] if points else None
-    follow_selection("overview", area, area=area, page="Bidding zone")
+    follow_selection("overview", area, area=area, page=ZONE_PAGE)
+    with st.expander("What the numbers mean"):
+        st.markdown(narrative.DEFINITIONS)
+        st.markdown(lead(ctx, buses, metrics))
+        kpi_row(f"{ctx.run.name}, {ctx.period}", buses)
+        for ref in ctx.references:
+            kpi_row(f"validation {ref.run.name}, {ref.period}", ref.bus_metrics())
     table = metrics[list(TABLE_COLUMNS)].rename(columns=TABLE_COLUMNS)
     shares = [c for c in table if "≤" in c]
     table[shares] *= 100
@@ -219,9 +347,135 @@ def accuracy(ctx: Context) -> None:
         st.dataframe(table.style.format("{:.2f}"))
 
 
+def plain_error(value: float) -> str:
+    """A signed price error in plain words."""
+    return f"{abs(value):.0f} €/MWh too {'low' if value < 0 else 'high'}"
+
+
+def puzzles(run: RunData) -> list[Puzzle]:
+    """The four puzzle cards of a run over its whole year."""
+    tables = puzzle_tables(run.area_model, run.area_observed)
+    spikes, negative, cheap = tables["spikes"], tables["negative"], tables["cheap"]
+    spike_zone, cheap_zone = spikes.index[0], cheap.index[0]
+    export = net_export(run.flows, EXPORTER, run.observed.index)
+    shares = negative.loc[NEGATIVE_AREA]
+    return [
+        Puzzle(
+            "Why are the price spikes too low?",
+            narrative.SPIKES.format(
+                top=f"{TOP_SHARE:.0%}",
+                median=plain_error(spikes.model.median()),
+                zone=narrative.NAMES[spike_zone],
+                value=plain_error(spikes.model.iloc[0]),
+            ),
+            spikes.head(CARD_ZONES),
+            "€/MWh, model minus market",
+            f"Explore {narrative.NAMES[spike_zone]}",
+            ZONE_PAGE,
+            spike_zone,
+        ),
+        Puzzle(
+            "Why does the model almost never go negative?",
+            narrative.NEGATIVE.format(
+                zone=narrative.NAMES[NEGATIVE_AREA],
+                market=f"{shares.market:.1%}",
+                model=f"{shares.model:.1%}",
+            ),
+            100 * negative.head(CARD_ZONES),
+            "% of hours at or below 0",
+            f"Explore {narrative.NAMES[NEGATIVE_AREA]}",
+            ZONE_PAGE,
+            NEGATIVE_AREA,
+        ),
+        Puzzle(
+            f"Why does {narrative.NAMES[EXPORTER]} export {export_direction(export.model, export.scheduled)}?",
+            narrative.EXPORT.format(
+                zone=narrative.NAMES[EXPORTER],
+                model=f"{export.model:+.0f}",
+                scheduled=f"{export.scheduled:+.0f}",
+            ),
+            pd.DataFrame(
+                {"market": export.scheduled, "model": export.model}, [EXPORTER]
+            ),
+            "net export (TWh)",
+            f"See the trade of {narrative.NAMES[EXPORTER]}",
+            FLOWS_PAGE,
+            EXPORTER,
+        ),
+        Puzzle(
+            f"Why is {narrative.NAMES[cheap_zone]} too cheap?",
+            narrative.CHEAP.format(
+                zone=narrative.NAMES[cheap_zone], value=plain_error(cheap.model.iloc[0])
+            ),
+            cheap.head(CARD_ZONES),
+            "mean bias (€/MWh)",
+            f"Explore {narrative.NAMES[cheap_zone]}",
+            ZONE_PAGE,
+            cheap_zone,
+        ),
+    ]
+
+
+def card_chart(frame: pd.DataFrame, unit: str) -> go.Figure:
+    """Small grouped bars of market and model per area."""
+    fig = go.Figure(
+        [
+            go.Bar(x=frame.index, y=frame[c], name=c, marker_color=CARD_COLORS[c])
+            for c in frame
+        ]
+    )
+    fig.update_layout(
+        barmode="group",
+        height=CARD_HEIGHT,
+        yaxis_title=unit,
+        showlegend=len(frame.columns) > 1,
+        margin=dict(t=10, b=10, l=10, r=10),
+        legend=dict(orientation="h", y=1.1, x=0),
+    )
+    return fig
+
+
+def puzzle_card(puzzle: Puzzle, key: str) -> None:
+    """Draw one puzzle card in a bordered box."""
+    box = st.container(border=True)
+    box.subheader(puzzle.question)
+    box.markdown(puzzle.answer)
+    box.plotly_chart(card_chart(puzzle.chart, puzzle.unit), key=f"{key}_chart")
+    box.button(
+        puzzle.action,
+        key=key,
+        on_click=open_page,
+        args=(puzzle.page,),
+        kwargs=dict(area=puzzle.area),
+    )
+
+
+def four_puzzles(run: RunData) -> None:
+    """Draw the puzzle cards in a two by two grid."""
+    st.header(narrative.PUZZLES)
+    st.markdown(narrative.PUZZLES_LEAD.format(year=run.year))
+    columns = [*st.columns(2), *st.columns(2)]
+    for i, (column, puzzle) in enumerate(zip(columns, puzzles(run))):
+        with column:
+            puzzle_card(puzzle, f"puzzle_{i}")
+
+
+def call_to_action() -> None:
+    """Draw the invitation to reuse and contribute with the project links."""
+    st.header("Take it further")
+    st.markdown(narrative.CTA)
+    for column, (name, url) in zip(
+        st.columns(len(narrative.LINKS)), narrative.LINKS.items()
+    ):
+        column.link_button(name, url, width="stretch")
+
+
 def render(ctx: Context) -> None:
-    """Draw the overview page from method to error patterns."""
-    method.method()
-    method.headline_results(ctx)
+    """Draw the story page from hero to call to action."""
+    hero(ctx)
+    big_numbers(ctx)
+    pick_country(ctx)
     accuracy(ctx)
+    four_puzzles(ctx.run)
     errors.error_patterns(ctx)
+    call_to_action()

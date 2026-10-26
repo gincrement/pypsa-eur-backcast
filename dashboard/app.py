@@ -18,22 +18,24 @@ import streamlit as st
 import yaml
 
 from dashboard import data
-from dashboard.state import DEFAULTS, init_state, sync_query_params
+from dashboard.narrative import TITLE
+from dashboard.state import DEFAULTS, init_state, open_page, sync_query_params
 from dashboard.views import (
     CONTROLS,
     PAGES,
     QUESTIONS,
+    TITLES,
     flows,
-    limitations,
+    method,
     overview,
     zone,
 )
-from dashboard.views.common import Context, Reference
+from dashboard.views.common import Context, Reference, zone_label
 from scripts.lib.backcast_plotting import STACK, group_colors
 
 AUTO_DAILY_HOURS = 24 * 62
 RENDER: dict[str, Callable[[Context], None]] = dict(
-    zip(PAGES, [overview.render, zone.render, flows.render, limitations.render])
+    zip(PAGES, [overview.render, zone.render, flows.render, method.render])
 )
 
 
@@ -108,11 +110,6 @@ def normalise(runs: list[str]) -> data.RunData:
     return run
 
 
-def open_page(page: str) -> None:
-    """Switch to a page."""
-    st.session_state.page = page
-
-
 def sidebar(runs: list[str]) -> Context:
     """Draw the page list and the controls the page uses, return the page context."""
     run = normalise(runs)
@@ -132,7 +129,9 @@ def sidebar(runs: list[str]) -> Context:
     if "run_a" in controls:
         bar.selectbox("Run", runs, key="run_a")
     if "area" in controls:
-        bar.selectbox("Bidding zone", list(run.buses.index), key="area")
+        bar.selectbox(
+            "Bidding zone", list(run.buses.index), format_func=zone_label, key="area"
+        )
     if "period" in controls:
         bar.selectbox("Period", data.PERIODS, key="period")
     custom = st.session_state.period == "custom"
@@ -178,7 +177,7 @@ def selection(ctx: Context, controls: list[str]) -> str:
     return " | ".join(p for p in parts if p) if controls else ""
 
 
-st.set_page_config(page_title="Backcast dashboard", layout="wide")
+st.set_page_config(page_title=TITLE, layout="wide")
 init_state()
 runs = data.discover_runs(data.CACHE)
 if not runs:
@@ -193,8 +192,8 @@ if not runs:
 context = sidebar(runs)
 page = st.session_state.page
 title, line = st.columns([3, 2], vertical_alignment="bottom")
-title.title(page)
+title.title(TITLES[page])
 line.caption(selection(context, CONTROLS[page]), text_alignment="right")
-st.markdown(QUESTIONS[page].format(area=context.area, run=context.run.name))
+st.markdown(QUESTIONS[page].format(area=zone_label(context.area), run=context.run.name))
 RENDER[st.session_state.page](context)
 sync_query_params()

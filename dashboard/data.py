@@ -34,6 +34,7 @@ MONTH_NAMES = list(calendar.month_name)[1:]
 PERIODS = ["year", *MONTH_NAMES, "winter week", "summer week", "custom"]
 AGGREGATIONS = {"hourly": None, "daily": "D"}
 TOP_SHARE = 0.05
+WEEK_HOURS = 168
 KPIS = {
     "MAE": ("mae", "median"),
     "MAE / mean": ("rel_mae", "median"),
@@ -253,6 +254,40 @@ def border_positions(
     frame = pd.DataFrame(columns).reindex(hours)
     frame.columns.names = ["neighbour", "series"]
     return frame
+
+
+def net_export(flows: pd.DataFrame, area: str, hours: pd.DatetimeIndex) -> pd.Series:
+    """Net export of an area in TWh over the hours, modelled and scheduled."""
+    positions = border_positions(flows, area, hours)
+    series = positions.T.groupby(level="series").sum().T.sum() / 1e6
+    return series.reindex(["model", "scheduled"], fill_value=0.0)
+
+
+def hero_week(prices: pd.Series) -> pd.DatetimeIndex:
+    """Full Monday-start week with the widest price range among weeks with an hour at or below 0 €/MWh, else among all full weeks."""
+    start = prices.index.normalize() - pd.to_timedelta(prices.index.weekday, unit="D")
+    weeks = prices.groupby(start).agg(["count", "min", "max"])
+    weeks = weeks[weeks["count"] == WEEK_HOURS]
+    span = weeks["max"] - weeks["min"]
+    negative = span[weeks["min"] <= 0]
+    week = (negative if len(negative) else span).idxmax()
+    return pd.date_range(week, periods=WEEK_HOURS, freq="h")
+
+
+def puzzle_tables(
+    model: pd.DataFrame, observed: pd.DataFrame
+) -> dict[str, pd.DataFrame]:
+    """Areas worst first by error in the top share of expensive hours, by hours at or below 0 €/MWh in the market and by mean bias."""
+    metrics = area_metrics(model, observed)
+    top = top_errors(model - observed, observed, TOP_SHARE)
+    shares = metrics[["nonpositive_observed", "nonpositive_model"]]
+    return {
+        "spikes": top.sort_values().to_frame("model"),
+        "negative": shares.set_axis(["market", "model"], axis=1).sort_values(
+            "market", ascending=False
+        ),
+        "cheap": metrics.mean_bias.sort_values().to_frame("model"),
+    }
 
 
 def marginal_shares(marginal: pd.Series) -> pd.Series:
