@@ -12,7 +12,6 @@ from dashboard import narrative
 from dashboard.data import TOP_SHARE, RunData, area_metrics, border_positions
 from dashboard.views.common import Context, bus_metrics, worst
 from scripts.lib.backcast_data import top_errors
-from scripts.lib.backcast_plotting import ZONE_GROUPS
 
 EXPORTER = "DE_LU"
 INTEGER_ROWS = ["year", "scored buses"]
@@ -47,15 +46,6 @@ def summary(run: RunData) -> dict[str, float]:
     }
 
 
-def bias_range(metrics: pd.DataFrame, areas: list[str]) -> str:
-    """Range of the mean bias over the areas present in the metrics."""
-    values = metrics.mean_bias.reindex(areas).dropna()
-    if values.empty:
-        return "n/a"
-    low, high = f"{values.min():+.0f}", f"{values.max():+.0f}"
-    return low if low == high else f"{low} to {high}"
-
-
 def facts(run: RunData, numbers: dict[str, float]) -> dict[str, str]:
     """Values filling the placeholders of the prose for a run."""
     metrics = area_metrics(run.area_model, run.area_observed)
@@ -67,8 +57,8 @@ def facts(run: RunData, numbers: dict[str, float]) -> dict[str, str]:
         "nonpositive_model": f"{numbers['hours ≤ 0 model (%)']:.1f} %",
         "de_model": f"{numbers[f'{EXPORTER} net export model (TWh)']:+.0f}",
         "de_scheduled": f"{numbers[f'{EXPORTER} net export scheduled (TWh)']:+.0f}",
-        "italy_bias": bias_range(metrics, ZONE_GROUPS["Italy"]),
-        "fi_bias": bias_range(metrics, ["FI"]),
+        "high_bias": worst(metrics.mean_bias),
+        "low_bias": worst(-metrics.mean_bias),
         "worst_mae": worst(metrics.mae),
     }
 

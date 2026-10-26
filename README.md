@@ -51,7 +51,8 @@ pixi run -e dashboard backcast-dashboard                       # streamlit run d
   Observed share 3.0 % of hours (2023), model 0.3 %.
 - Germany exports too much: model net export +21.5 TWh vs scheduled -14.5 TWh (2023), +49.5 vs +31.9 TWh (2019).
 - Finland is too cheap: bias -18.5 EUR/MWh in 2023.
-- Italy: 2023 bias per Italian zone ranges from -9.4 to +2.3 EUR/MWh (2019: -17.7 to +2.4). Under investigation.
+- Level errors: in 2023 most continental zones are too expensive (Central West Europe +8 to +10, Baltics +11 to +12, Iberia +19 EUR/MWh),
+  while Finland (-18.5), Ireland (-11.5) and Sicily (-9.4) are too cheap. In 2019 Sicily (-17.7) and Greece (-11.7) are too cheap.
 - The Norwegian zones NO_1, NO_2 and NO_5 separate in 44 % of 2023 model hours (observed 38 %). The hydro inflow split per zone is uncertain.
 - The south-east chain (HU, SK, HR) shares one price more often than the market. The Baltics and other edge zones miss the daily shape.
 - 2019 prices of PL, RO, BG and GB are published in local currency and are not scored yet.

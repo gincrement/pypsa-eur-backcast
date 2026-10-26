@@ -14,8 +14,8 @@ actually cleared, as published on ENTSO-E (European grid operators' data platfor
 
 HOW = """
 The model is PyPSA-Eur run as a pure dispatch problem. All capacities are fixed to the fleet of the backcast
-year, so the optimisation only decides which plants run in each hour. Gurobi solves one linear program for
-the whole year with perfect foresight. The model price is the dual of the energy balance at each bus: the
+year, so the optimisation only decides which plants run in each hour. Gurobi solves one quadratic program for
+the whole year with perfect foresight; the cost spread of thermal plants adds the quadratic term. The model price is the dual of the energy balance at each bus: the
 cost of serving one more MWh there.
 """
 
@@ -32,7 +32,7 @@ PIPELINE = {
         "one bus per bidding zone",
         "zones trade over NTC links, no physical grid",
         "cost-minimal dispatch for all hours of the year",
-        "one linear program, perfect foresight",
+        "one quadratic program, perfect foresight",
     ],
     "Output": [
         "hourly price per zone (dual of the energy balance)",
@@ -66,7 +66,7 @@ LIMITATIONS = """
 | Price spikes are too low. Real bids carry markups (scarcity rent, start-up costs) that a cost-based model cannot produce. | mean error in the 5 % most expensive hours: {top5} €/MWh (median over buses) | Overview, by price level |
 | No hours at or below 0 €/MWh. Nuclear, biomass and Nordic reservoir hydro throttle at a positive cost and absorb every surplus; flexibility limits are missing. | hours ≤ 0: {nonpositive_observed} observed vs {nonpositive_model} modelled (mean over buses) | Overview, metric table |
 | Germany exports too much. | net export {de_model} TWh modelled vs {de_scheduled} TWh scheduled | Cross border flows, zone DE_LU |
-| Some zones carry a large level error: Italy is too expensive, Finland too cheap. | bias Italy {italy_bias}, FI {fi_bias} €/MWh | Overview, map metric bias |
+| Some zones carry a large level error. Since the observed cost spread, most continental zones are too expensive and several edge zones too cheap. | too expensive by: {high_bias}; too cheap by: {low_bias} €/MWh | Overview, map metric bias |
 | The Baltics and other edge zones miss the daily shape. Cheap night imports from flat Nordic prices compress the profile. | largest MAE: {worst_mae} | Bidding zone |
 | The south-east chain (HU, SK, HR) shares one price more often than the market does. | | Cross border flows |
 | Hydro inflow and its split between zones of one country (SE, NO, IT) is uncertain. Reservoirs have no water values from observed filling levels. | | Bidding zone, energy per carrier |
