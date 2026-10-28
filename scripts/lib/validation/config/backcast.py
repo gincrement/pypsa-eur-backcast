@@ -65,11 +65,11 @@ class BackcastConfig(ConfigModel):
 
     area_to_bus: str = Field(
         "data/entsoe_area_to_bus.csv",
-        description="CSV file with the many-to-one map from model buses (`bus`) to ENTSO-E bidding zone areas (`entsoe_area`), e.g. `data/entsoe_area_to_bus-2019.csv` for the Italian bidding zones before 2021, in which the Calabria bus `ITCA` maps to the virtual zone `IT_ROSN`.",
+        description="CSV file with the many-to-one map from model buses (`bus`) to ENTSO-E bidding zone areas (`entsoe_area`), e.g. `data/entsoe_area_to_bus-pre2021.csv` for the Italian bidding zones before 2021, in which the Calabria bus `ITCA` maps to the virtual zone `IT_ROSN`.",
     )
     borders: str = Field(
         "data/entsoe_borders.csv",
-        description="CSV file with the ENTSO-E bidding zone borders (`area0`, `area1`) whose cross-border capacities are retrieved, used with `electricity: cross_border_capacities: ntc`, e.g. `data/entsoe_borders-2019.csv` for the Italian bidding zones before 2021.",
+        description="CSV file with the ENTSO-E bidding zone borders (`area0`, `area1`) whose cross-border capacities are retrieved, used with `electricity: cross_border_capacities: ntc`, e.g. `data/entsoe_borders-pre2021.csv` for the Italian bidding zones before 2021.",
     )
     exclude_price_areas: list[str] = Field(
         default_factory=list,

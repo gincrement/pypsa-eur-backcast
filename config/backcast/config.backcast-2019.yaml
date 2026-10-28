@@ -111,8 +111,8 @@ solving:
     noisy_costs: false
 
 backcast:
-  area_to_bus: data/entsoe_area_to_bus-2019.csv
-  borders: data/entsoe_borders-2019.csv
+  area_to_bus: data/entsoe_area_to_bus-pre2021.csv
+  borders: data/entsoe_borders-pre2021.csv
   exclude_price_areas: [AL, BA, BG, GB, ME, MK, PL, RO, XK]
   exclude_price_buses: [FR15]
   max_price_gap_hours_by_area:
