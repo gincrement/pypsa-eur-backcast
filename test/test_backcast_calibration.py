@@ -78,6 +78,29 @@ def test_aggregated_generation_drops_consumption_and_converts_to_utc():
     assert result.index.equals(index[:2].tz_convert("UTC"))
 
 
+def test_aggregated_generation_merges_mixed_periods():
+    plain = pd.DataFrame(
+        {"Nuclear": [1.0, 2.0], "Solar": [3.0, 4.0]},
+        index=pd.date_range("2020-09-30 22:00", periods=2, freq="h", tz="UTC"),
+    )
+    nested = pd.DataFrame(
+        [[5.0, 6.0, 0.5]],
+        index=pd.date_range("2020-10-01 00:00", periods=1, freq="h", tz="UTC"),
+        columns=pd.MultiIndex.from_tuples(
+            [
+                ("Nuclear", "Actual Aggregated"),
+                ("Solar", "Actual Aggregated"),
+                ("Solar", "Actual Consumption"),
+            ]
+        ),
+    )
+    raw = pd.concat([plain, nested])
+    result = aggregated_generation(raw, pd.Timestamp("2021-01-01", tz="UTC"))
+    assert result.columns.tolist() == ["Nuclear", "Solar"]
+    np.testing.assert_allclose(result.Nuclear, [1, 2, 5])
+    np.testing.assert_allclose(result.Solar, [3, 4, 6])
+
+
 def test_hourly_carrier_generation_maps_production_types():
     index = pd.date_range("2023-01-01", periods=8, freq="15min", tz="UTC")
     raw = pd.DataFrame(
