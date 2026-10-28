@@ -24,6 +24,7 @@
     * Iberian gas cap: new option `conventional: gas_price_cap` caps the gas price per country (ES and PT in 2023).
     * Wind targets: new option `backcast: wind_target_twh` calibrates areas without ENTSO-E wind data to given energies (GB from DESNZ and DUKES). Wind carriers an area does not publish are set to zero availability (e.g. offshore wind in `IE_SEM`). The area map is configurable for the pre-2021 Italian zones.
     * 2019 configuration: same year-independent settings with cited 2019 targets (DUKES GB wind, BNetzA DE curtailment).
+    * Year support: the pre-2021 Italian zone files are committed as `data/entsoe_area_to_bus-pre2021.csv` and `data/entsoe_borders-pre2021.csv`. `test/test_backcast_configs.py` checks every year config, and the README lists the steps to add a year. New option `backcast: exchange_proxy_fallback` fills long gaps of a border's capacity source with the scheduled exchange proxy. The ENTSO-E generation retrieval keeps the periods returned with consumption columns, which were dropped before (DK_1 Oct–Nov 2019, SI Oct 2020, IT_SUD and PL in 2024).
     * PHS cap: new option `renewable: hydro: PHS_max_hours_cap: geth2015` caps the storage hours of pumped hydro at the country values of Geth et al. (2015) in `data/geth2015_hydro_capacities.csv`.
     * NL CCGT data fix: corrected rows for the Dutch CCGTs at Eemshaven (Magnum), Maasbracht, Eemscentrale and Velsen in `data/custom_powerplants.csv`, with the originals dropped via `electricity: powerplants_filter`.
   * Evaluation and figures:

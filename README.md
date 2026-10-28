@@ -43,6 +43,23 @@ pixi run -e dashboard backcast-dashboard                       # streamlit run d
 - Solver: Gurobi. The marginal cost spread makes the problem a QP (optimisation with a squared cost term).
 - Outputs: `results/backcast-<year>/backcast/{price_metrics.csv, price_monthly_bias.csv, price_evaluation.pdf, figures/}`.
 
+## Adding a backcast year
+
+Weather cutouts (`europe-<year>-sarah3-era5`) exist for 2019 to 2025, so these are the years that can be backcast. The IRENA capacities in powerplantmatching and the EIA hydro statistics in `data/eia_hydro_annual_generation.csv` end in 2024.
+Each year has one full config `config/backcast/config.backcast-<year>.yaml`. Model changes go into every year config, so that all years run the same model.
+
+1. Copy the config of the closest year and replace the year in the run name, `planning_horizons`, snapshots, cutout, `powerplants_filter`, `custom_powerplants`, `estimate_renewable_capacities: year` and `estimate_efficiencies: reference_year`.
+2. Set the bidding zones: `data/entsoe_area_to_bus-pre2021.csv` and `data/entsoe_borders-pre2021.csv` before 2021 (Rossano instead of Calabria), the defaults from 2021.
+3. Set the year facts and cite each source in a comment:
+   `exclude_price_areas` (areas without EUR prices or markets), `exclude_generation_areas`,
+   `fixed_border_capacities` (interconnectors commissioned during or after the year),
+   `wind_target_twh` (GB from DUKES minus Northern Ireland wind), `wind_curtailment_twh` (DE_LU from the BNetzA Monitoringbericht),
+   `nuclear_phase_out` and `conventional: gas_price_cap` (ES and PT from 2022-06-15 to 2023-12-31).
+   From 2024 set `load: supplement_synthetic: false`, as the synthetic load ends in 2023.
+4. Run `pytest test/test_backcast_configs.py`, which checks every year config against the schema, its year and the area map, then `pixi run backcast <year>`.
+   Missing ENTSO-E data stops the build with the area or border to add to the exclude lists, `fixed_border_capacities` or `wind_calibration_exclude`.
+   Borders whose capacity source ends within the year can use `backcast: exchange_proxy_fallback`. Wind calibration factors just outside `wind_calibration_factor_bounds` that match the other years (e.g. AT onwind about 2, DK_2 onwind about 0.4) can widen the bounds of that year.
+
 ## Dashboard
 
 The results are published as an interactive dashboard at <https://pypsa-eur-backcast.streamlit.app/>.
