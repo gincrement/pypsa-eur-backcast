@@ -455,6 +455,11 @@
           },
           "type": "array"
         },
+        "exchange_proxy_fallback": {
+          "default": false,
+          "description": "Fill gaps longer than `max_capacity_gap_hours` in the ENTSO-E capacity source of a border direction with the monthly maximum of the day-ahead scheduled commercial exchanges over both directions instead of raising an error, used with `electricity: cross_border_capacities: ntc`. The source of such directions is recorded as `<source>+scheduled_exchange`. E.g. for the Nordic borders, whose offered capacities end with the start of flow-based market coupling on 2024-10-29.",
+          "type": "boolean"
+        },
         "calibrate_wind": {
           "default": false,
           "description": "Scale the onshore and offshore wind availability (`p_max_pu`) per ENTSO-E area in `data/entsoe_area_to_bus.csv` so that the available energy matches the actual generation reported by the ENTSO-E Transparency Platform plus `wind_curtailment_twh`. Only months with actual generation of the carrier are compared. One factor per area and carrier, `p_max_pu` is clipped at 1. Wind carriers with capacity but without actual generation in an area that publishes generation, e.g. offshore wind in `IE_SEM`, get zero availability. Areas without published generation are scaled to `wind_target_twh` or keep their availability, as do carriers excluded in `wind_calibration_exclude`. Requires `foresight: overnight`.",
@@ -12993,6 +12998,11 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "exchange_proxy_fallback": {
+          "default": false,
+          "description": "Fill gaps longer than `max_capacity_gap_hours` in the ENTSO-E capacity source of a border direction with the monthly maximum of the day-ahead scheduled commercial exchanges over both directions instead of raising an error, used with `electricity: cross_border_capacities: ntc`. The source of such directions is recorded as `<source>+scheduled_exchange`. E.g. for the Nordic borders, whose offered capacities end with the start of flow-based market coupling on 2024-10-29.",
+          "type": "boolean"
         },
         "calibrate_wind": {
           "default": false,
