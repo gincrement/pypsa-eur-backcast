@@ -3,20 +3,17 @@
 #
 # SPDX-License-Identifier: CC0-1.0
 
+# Day-ahead price backcast model shared by all years. The years are scenarios in
+# config/backcast/scenarios.yaml; model changes go here so that all years run the same model.
+
 run:
-  name: backcast-2023
-
-planning_horizons: [2023]
-
-snapshots:
-  start: "2023-01-01"
-  end: "2024-01-01"
+  name: all
+  scenarios:
+    enable: true
+    file: config/backcast/scenarios.yaml
 
 sector:
   enabled: false
-
-atlite:
-  default_cutout: europe-2023-sarah3-era5
 
 electricity:
   extendable_carriers:
@@ -26,12 +23,9 @@ electricity:
     Link: []
   transmission_limit: v1.0
   cross_border_capacities: ntc
-  powerplants_filter: "(DateOut >= 2023 or DateOut != DateOut) and (DateIn <= 2023 or DateIn != DateIn) and not (Country == 'NL' and Name in ['Magnum Eemshaven', 'Claus', 'Eem', 'Velsen'])"
-  custom_powerplants: "Country == 'NL' and (DateOut >= 2023 or DateOut != DateOut) and (DateIn <= 2023 or DateIn != DateIn)"
   estimate_renewable_capacities:
     from_powerplantmatching: false
     from_irenastat: true
-    year: 2023
 
 renewable:
   hydro:
@@ -45,7 +39,6 @@ conventional:
   fuel_price_nominal: true
   estimate_efficiencies:
     enable: true
-    reference_year: 2023
   nuclear:
     p_min_pu: 0.3
   lignite:
@@ -61,22 +54,6 @@ conventional:
     utilisation: 0.35
     reference: observed
     exclude_areas: [IE_SEM]
-  gas_price_cap:
-    enable: true
-    countries: [ES, PT]
-    cap:
-      "2023-01-01": 45
-      "2023-01-14": 50
-      "2023-02-14": 55
-      "2023-03-14": 60
-      "2023-04-14": 65
-      "2023-06-01": 70
-  daily_gas_price:
-    enable: true
-    default_hub: THE
-    hubs:
-      ES: MIBGAS
-      PT: MIBGAS
 
 costs:
   year: 2020
@@ -120,18 +97,14 @@ solving:
     noisy_costs: false
 
 backcast:
-  exclude_price_areas: [AL, BA, GB, ME, MK, XK]
   exclude_price_buses: [FR15]
   max_price_gap_hours_by_area:
     IE_SEM: 25
   fixed_border_capacities:
-    DK_1-GB: 0
     FI-SE_2: 0
-    IT_CALA-IT_CSUD: physical
     FR-IT_CNOR: physical
     FR-IT_SARD: physical
   exchange_proxy_borders: [BE-NL, DE_LU-NL]
-  exclude_generation_areas: [AL, GB]
   calibrate_wind: true
   wind_calibration_exclude:
     BA: [onwind]
@@ -139,7 +112,6 @@ backcast:
     ES: [offwind]
     FR: [offwind]
     HR: [onwind]
-    IT_CALA: [onwind]
     IT_CNOR: [onwind]
     IT_CSUD: [onwind]
     IT_NORD: [onwind]
@@ -153,14 +125,7 @@ backcast:
     NO_5: [onwind]
     SI: [onwind]
     XK: [onwind]
-  wind_calibration_factor_bounds: [0.35, 2.0]
-  wind_target_twh:
-    GB: {onwind: 29.7, offwind: 49.6}  # DESNZ ET 6.1 UK minus NI wind 2.77 TWh (DfE NI renewable generation statistics 2023)
-  wind_curtailment_twh:
-    DE_LU: {onwind: 6, offwind: 4}
   monthly_nuclear_availability: true
-  nuclear_phase_out:
-    DE_LU: "2023-04-15"
   hybrid_capacities:
     enable: true
     physical_factor: 0.49
