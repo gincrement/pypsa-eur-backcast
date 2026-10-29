@@ -14,7 +14,9 @@ border, so that the capacity of the less used direction is not zero. The net
 transfer capacity takes precedence, as the offered capacities of the Italian
 internal borders are published with swapped directions. Gaps of the chosen
 source up to ``backcast: max_capacity_gap_hours`` are interpolated, longer gaps
-raise an error.
+raise an error, unless ``backcast: exchange_proxy_fallback`` fills them with
+the monthly maximum of the scheduled exchanges, e.g. for the Nordic borders
+after the start of flow-based market coupling on 2024-10-29.
 
 Some published net transfer capacities are outdated and lower than the
 scheduled exchanges, e.g. on the borders within the Core region that still
@@ -49,7 +51,7 @@ import pypsa
 from scripts._helpers import configure_logging, get_snapshots, set_scenario_config
 from scripts.lib.cross_border import area_border, border_name, inter_zone_branches
 from scripts.lib.entsoe import read_area_to_bus
-from scripts.lib.timeseries import fill_short_gaps
+from scripts.lib.timeseries import fill_short_gaps, gap_lengths
 
 logger = logging.getLogger(__name__)
 
@@ -75,8 +77,9 @@ def area_capacities(
     snapshots: pd.DatetimeIndex,
     max_gap: int,
     exchange_proxy_borders: list[str],
+    exchange_proxy_fallback: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Return hourly capacities for both directions of each area border with gaps up to `max_gap` hours interpolated and raised to the scheduled exchange, and the source and number of interpolated hours per direction."""
+    """Return hourly capacities for both directions of each area border with gaps up to `max_gap` hours interpolated, longer gaps filled with the exchange proxy if `exchange_proxy_fallback`, raised to the scheduled exchange, and the source and number of interpolated hours per direction."""
     directions = sorted({*borders, *(b[::-1] for b in borders)})
     names = [border_name(*d) for d in directions]
     missing = [name for d, name in zip(directions, names) if d not in data.index]
@@ -105,6 +108,11 @@ def area_capacities(
         available = candidates.columns[candidates.notna().any()]
         assert not available.empty, f"No cross-border capacity data for {name}."
         raw[name], source[name] = candidates[available[0]], available[0]
+        if exchange_proxy_fallback and source[name] != "scheduled_exchange":
+            long_gaps = gap_lengths(raw[name]) > max_gap
+            if long_gaps.any():
+                raw[name] = raw[name].where(~long_gaps, proxy[name])
+                source[name] += "+scheduled_exchange"
     raw = pd.DataFrame(raw, index=snapshots)
     capacities = np.fmax(fill_short_gaps(raw, max_gap, max_gap), exchange)
     info = pd.DataFrame({"source": source, "interpolated_hours": raw.isna().sum()})
@@ -118,12 +126,18 @@ def build_capacities(
     fixed: dict[str, float | str],
     max_gap: int,
     exchange_proxy_borders: list[str],
+    exchange_proxy_fallback: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Map directed area capacities to bus pairs, use `fixed` capacities for listed area borders and record the source and interpolated hours per direction."""
     measured = pairs[~pairs.border.isin(fixed)]
     borders = list(zip(measured.area0, measured.area1))
     area, info = area_capacities(
-        data, borders, snapshots, max_gap, exchange_proxy_borders
+        data,
+        borders,
+        snapshots,
+        max_gap,
+        exchange_proxy_borders,
+        exchange_proxy_fallback,
     )
     capacities = {}
     sources = {}
@@ -203,6 +217,7 @@ if __name__ == "__main__":
         snakemake.params.fixed_border_capacities,
         snakemake.params.max_capacity_gap_hours,
         snakemake.params.exchange_proxy_borders,
+        snakemake.params.exchange_proxy_fallback,
     )
 
     logger.info(f"Cross-border capacity sources:\n{sources.to_string()}")

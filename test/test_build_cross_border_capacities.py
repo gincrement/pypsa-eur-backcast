@@ -136,6 +136,37 @@ def test_area_capacities_source_priority(columns, reverse, proxy, capacity, sour
     assert info.loc["FR->ES", "source"] == source
 
 
+def test_area_capacities_exchange_proxy_fallback():
+    data = pd.concat(
+        [
+            retrieved(
+                "FR",
+                "ES",
+                offered_capacity=[9, 9, np.nan, np.nan],
+                scheduled_exchange=[5, 6, 7, 2],
+            ),
+            retrieved("ES", "FR"),
+        ]
+    )
+
+    with pytest.raises(AssertionError, match="FR->ES"):
+        area_capacities(
+            data, [("FR", "ES")], SNAPSHOTS, max_gap=1, exchange_proxy_borders=[]
+        )
+    capacities, info = area_capacities(
+        data,
+        [("FR", "ES")],
+        SNAPSHOTS,
+        max_gap=1,
+        exchange_proxy_borders=[],
+        exchange_proxy_fallback=True,
+    )
+
+    np.testing.assert_allclose(capacities["FR->ES"], [9, 9, 7, 7])
+    assert info.loc["FR->ES", "source"] == "offered_capacity+scheduled_exchange"
+    assert info.loc["ES->FR", "source"] == "scheduled_exchange"
+
+
 def test_area_capacities_resample_quarter_hours():
     index = pd.MultiIndex.from_product(
         [["FR"], ["ES"], pd.date_range(SNAPSHOTS[0], periods=16, freq="15min")],
