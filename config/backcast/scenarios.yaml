@@ -103,6 +103,13 @@ backcast-2021:
   conventional:
     estimate_efficiencies:
       reference_year: 2021
+    # THE daily prices start in 2021-10, so other countries keep the monthly price.
+    daily_gas_price:
+      enable: true
+      default_hub:
+      hubs:
+        ES: MIBGAS
+        PT: MIBGAS
 
   backcast:
     exclude_price_areas: [AL, BA, BG, GB, ME, MK, RO, XK]  # BG and RO day-ahead prices are published in BGN and RON in 2021
